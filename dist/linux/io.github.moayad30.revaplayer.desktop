@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Reva Player
+GenericName=Media Player
+Comment=Desktop media player for local files, playlists, subtitles, and study workflows
+Exec=RevaPlayer %U
+TryExec=RevaPlayer
+Icon=revaplayer
+Terminal=false
+StartupNotify=true
+StartupWMClass=RevaPlayer
+Categories=AudioVideo;Player;Video;Audio;
+MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/ogg;audio/mpeg;audio/flac;audio/x-wav;audio/ogg;application/x-mpegURL;application/vnd.apple.mpegurl;
+Keywords=video;audio;player;playlist;subtitles;mpv;study;
+SingleMainWindow=true
+X-GNOME-UsesNotifications=true

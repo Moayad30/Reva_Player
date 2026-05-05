@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/revaplayer.xpm</file>
+        <file>themes/base.qss</file>
+        <file>themes/dark.qss</file>
+        <file>mpv/thumbfast.lua</file>
+    </qresource>
+</RCC>

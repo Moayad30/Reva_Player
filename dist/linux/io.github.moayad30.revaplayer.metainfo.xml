@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.moayad30.revaplayer</id>
+  <name>Reva Player</name>
+  <summary>Qt and libmpv based desktop media player for local playback</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <developer id="io.github.moayad30">
+    <name>Moayad</name>
+  </developer>
+  <launchable type="desktop-id">io.github.moayad30.revaplayer.desktop</launchable>
+  <description>
+    <p>Reva Player is a Linux desktop media player built with Qt Widgets, libmpv, and SQLite.</p>
+    <p>It focuses on local playback, playlists, subtitles, saved folder lists, progress tracking, screenshots, scripts, and dense configurable controls.</p>
+  </description>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Player</category>
+    <category>Video</category>
+  </categories>
+  <keywords>
+    <keyword>video</keyword>
+    <keyword>audio</keyword>
+    <keyword>player</keyword>
+    <keyword>playlist</keyword>
+    <keyword>subtitles</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <url type="homepage">https://github.com/moayad30/Reva_Player</url>
+  <releases>
+    <release version="1.0.0" date="2026-05-03"/>
+  </releases>
+</component>

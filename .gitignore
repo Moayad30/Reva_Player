@@ -1,0 +1,74 @@
+# Local editor and agent state
+.idea/
+.vscode/
+.vs/
+.codex/
+.codex
+.agents/
+docs/internal/
+*.swp
+*~
+.DS_Store
+
+# CMake/build output
+build/
+build-*/
+build-appimage/
+_build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CTestTestfile.cmake
+Testing/
+Makefile
+compile_commands.json
+compile_flags.txt
+install_manifest.txt
+out/
+*.autogen/
+*_autogen/
+moc_*.cpp
+qrc_*.cpp
+
+# Packaging output
+dist/*
+!dist/
+!dist/linux/
+!dist/linux/**
+*.AppDir/
+AppDir/
+appimage-build/
+appimage-work/
+rpmbuild/
+
+# Generated package artifacts
+*.AppImage
+*.deb
+*.rpm
+*.tar.gz
+*.tar.xz
+*.zip
+*.zst
+
+# Temporary logs and scratch files
+*.tmp
+*.log
+*.bak
+*.orig
+*.rej
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Runtime/generated media cache
+thumbnails/
+cache/

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ubuntu-qt6:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++ \
+            qt6-base-dev \
+            libqt6opengl6-dev \
+            libmpv-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Smoke launch
+        run: |
+          QT_QPA_PLATFORM=minimal \
+          REVAPLAYER_DB_PATH=/tmp/revaplayer-ci.sqlite \
+          timeout 8s ./build/RevaPlayer || test $? -eq 124
+
+  debian-bookworm:
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            ca-certificates \
+            cmake \
+            ninja-build \
+            g++ \
+            qt6-base-dev \
+            libqt6opengl6-dev \
+            libmpv-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Smoke launch
+        run: |
+          QT_QPA_PLATFORM=minimal \
+          REVAPLAYER_DB_PATH=/tmp/revaplayer-ci.sqlite \
+          timeout 8s ./build/RevaPlayer || test $? -eq 124

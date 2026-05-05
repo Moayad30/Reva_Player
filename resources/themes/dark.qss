@@ -1,0 +1,327 @@
+QWidget {
+    background: #101114;
+    color: #e8ecf3;
+    font-size: 13px;
+}
+
+QMainWindow,
+QWidget#mainCentralWidget,
+QWidget#videoViewport,
+QWidget#controlBar,
+QWidget#floatingControlBar {
+    background: #101114;
+}
+
+QMainWindow::separator {
+    background: #1d2128;
+    width: 1px;
+    height: 1px;
+}
+
+QMenuBar,
+QMenu,
+QStatusBar,
+QDockWidget,
+QTabWidget::pane,
+QListView,
+QListWidget,
+QTreeWidget {
+    background: #12161d;
+    color: #e8ecf3;
+}
+
+QMenuBar {
+    border-bottom: 1px solid #1d2128;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+QMenuBar::item:selected,
+QMenu::item:selected,
+QListView::item:selected,
+QListWidget::item:selected,
+QTreeWidget::item:selected,
+QTabBar::tab:selected {
+    background: #27354a;
+}
+
+QPushButton,
+QToolButton {
+    background: #1a2330;
+    border: 1px solid #263246;
+    border-radius: 6px;
+    color: #edf2fb;
+    min-height: 28px;
+    padding: 4px 10px;
+}
+
+QWidget#floatingControlBar {
+    background: rgba(10, 14, 22, 208);
+    border: 1px solid rgba(106, 132, 170, 120);
+    border-radius: 22px;
+}
+
+QWidget#transportGroup,
+QWidget#timelineGroup,
+QWidget#volumeGroup,
+QWidget#fullscreenTopBar {
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 1, y2: 0,
+        stop: 0 rgba(12, 17, 24, 226),
+        stop: 0.52 rgba(17, 23, 32, 232),
+        stop: 1 rgba(11, 16, 23, 236)
+    );
+    border: 1px solid rgba(120, 148, 189, 150);
+    border-radius: 18px;
+}
+
+QWidget#floatingControlBar QToolButton,
+QWidget#fullscreenTopBar QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    color: #f4f7fb;
+    font-weight: 600;
+    min-height: 36px;
+    padding: 4px 10px;
+}
+
+QWidget#floatingControlBar QToolButton:hover,
+QWidget#fullscreenTopBar QToolButton:hover {
+    background: rgba(44, 60, 82, 180);
+    border-color: rgba(96, 124, 164, 130);
+}
+
+QToolButton#controlPlayPauseButton {
+    background: #4f88ff;
+    border: 1px solid #77a4ff;
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QToolButton#controlPlayPauseButton:hover {
+    background: #6698ff;
+}
+
+QToolButton#controlOpenButton,
+QToolButton#controlPreviousButton,
+QToolButton#controlNextButton,
+QToolButton#controlStopButton,
+QToolButton#controlFullscreenButton {
+    font-size: 18px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0 10px;
+}
+
+QToolButton#controlPlaylistButton,
+QToolButton#controlDetailsButton {
+    font-size: 18px;
+    min-width: 52px;
+    min-height: 40px;
+    padding: 0 10px;
+}
+
+QLabel#controlTimeLabel {
+    background: rgba(7, 11, 17, 0.92);
+    border: 1px solid rgba(116, 144, 189, 150);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 0 10px;
+}
+
+QLabel#controlVolumeIcon {
+    color: #ffb84a;
+    font-size: 15px;
+    padding-left: 2px;
+}
+
+QLabel#controlVolumeIcon[boosted="true"] {
+    color: #ff7200;
+}
+
+QLabel#controlVolumeValueLabel {
+    color: #ffc36a;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 0 4px;
+}
+
+QLabel#controlVolumeValueLabel[boosted="true"] {
+    color: #ff5600;
+}
+
+QLabel#fullscreenTopBarTitle {
+    color: #f3f6fb;
+    font-size: 13px;
+    font-weight: 600;
+    padding-left: 4px;
+}
+
+QPushButton:hover,
+QToolButton:hover {
+    background: #223248;
+}
+
+QPushButton:pressed,
+QToolButton:pressed {
+    background: #182435;
+}
+
+QSlider::groove:horizontal {
+    background: #1c2431;
+    border-radius: 3px;
+    height: 6px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #4a89dc;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #dfe7f3;
+    border: none;
+    border-radius: 6px;
+    margin: -4px 0;
+    width: 12px;
+}
+
+QSlider#controlVolumeSlider::groove:horizontal {
+    background: rgba(33, 24, 16, 0.94);
+    border: 1px solid rgba(120, 74, 28, 0.44);
+    border-radius: 5px;
+    height: 10px;
+}
+
+QSlider#controlVolumeSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ffd27e, stop:1 #ff8a10);
+    border-radius: 5px;
+}
+
+QSlider#controlVolumeSlider::add-page:horizontal {
+    background: rgba(22, 25, 32, 0.96);
+    border-radius: 5px;
+}
+
+QSlider#controlVolumeSlider::handle:horizontal {
+    background: #fff4df;
+    border: 1px solid rgba(255, 214, 157, 0.34);
+    border-radius: 8px;
+    margin: -4px 0;
+    width: 16px;
+}
+
+QDockWidget::title {
+    background: #181d24;
+    padding-left: 8px;
+    text-align: left;
+}
+
+QWidget#playlistHeaderBar {
+    background: #171c24;
+    border: 1px solid #242d3a;
+    border-radius: 8px;
+}
+
+QWidget#playlistHeaderBar QToolButton {
+    background: transparent;
+    border: 1px solid #2c3747;
+    border-radius: 6px;
+    min-height: 26px;
+    padding: 4px 8px;
+}
+
+QWidget#playlistHeaderBar QToolButton:checked {
+    background: #27354a;
+    border-color: #44618d;
+}
+
+QTabBar::tab {
+    background: #171b21;
+    border: 1px solid #242a33;
+    border-bottom: none;
+    padding: 6px 10px;
+}
+
+QLabel#viewportOverlayLabel {
+    background: rgba(0, 0, 0, 96);
+    border: 1px solid rgba(255, 255, 255, 32);
+    border-radius: 12px;
+    color: #f4f7fb;
+    font-size: 15px;
+    padding: 14px 18px;
+}
+
+QLabel#viewportActionOverlayLabel {
+    background: rgba(8, 13, 20, 196);
+    border: 1px solid rgba(109, 157, 227, 120);
+    border-radius: 999px;
+    color: #f3f7ff;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+}
+
+QWidget#viewportVolumeOverlayWidget {
+    background: transparent;
+    border: none;
+}
+
+QWidget#viewportVolumeOverlayHeader {
+    background: transparent;
+    border: none;
+}
+
+QLabel#viewportVolumeOverlayTextLabel {
+    background: transparent;
+    color: rgba(255, 240, 220, 0.92);
+    font-weight: 700;
+}
+
+QLabel#viewportVolumeOverlayValueLabel {
+    background: transparent;
+    color: #ffb760;
+    font-weight: 800;
+    padding: 0;
+}
+
+QWidget#viewportVolumeOverlayMeterShell {
+    background: rgba(4, 7, 12, 0.34);
+    border: 1px solid rgba(255, 192, 112, 0.24);
+    border-radius: 999px;
+}
+
+QWidget#viewportVolumeOverlayMeterFill {
+    background: #ff9f2f;
+    border: none;
+    border-radius: 999px;
+}
+
+QWidget#viewportVolumeOverlayMeterBoostFill {
+    background: #ff7a00;
+    border: none;
+    border-radius: 999px;
+}
+
+QWidget#viewportVolumeOverlayMeterMarker {
+    background: rgba(255, 242, 223, 0.98);
+    border: none;
+    border-radius: 1px;
+}
+
+QWidget#mediaInformationOverlay {
+    background: rgba(4, 8, 14, 184);
+    border: 1px solid rgba(120, 146, 184, 112);
+    border-radius: 8px;
+}
+
+QLabel#mediaInformationOverlayLabel {
+    background: transparent;
+    color: #f1f6ff;
+    font-size: 12px;
+}
