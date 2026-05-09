@@ -12,7 +12,7 @@ Verified against repository files on 2026-04-30.
 | Qt 6 | Verified build target | Default CMake path. |
 | Qt 5 | Build path exists | Needs runtime/feature verification before release. |
 | libmpv | Required | Only playback backend in repository files. |
-| SQLite | Required | Used for settings/history/resume/bookmarks/window state/custom commands. |
+| SQLite | Required | Used for settings/history/resume/bookmarks/window state. |
 | OpenGL | Required | Qt and libmpv render path use OpenGL. |
 | Wayland | Partially supported | Qt Wayland dependencies/scripts exist; needs per-desktop testing. |
 | X11/xcb | Expected | Qt xcb is a common fallback; needs package/runtime testing. |

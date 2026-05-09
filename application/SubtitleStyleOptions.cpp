@@ -25,10 +25,10 @@ const QVector<SubtitleAssOverrideOption> &subtitleOverrideOptionsStorage()
 const QVector<SubtitleChoiceOption> &subtitleAutoLoadModeStorage()
 {
     static const QVector<SubtitleChoiceOption> options {
-        {QStringLiteral("same_name"), QStringLiteral("Same Name Only")},
-        {QStringLiteral("fuzzy"), QStringLiteral("Smart Local Match")},
-        {QStringLiteral("all"), QStringLiteral("Load All Nearby Subtitle Files")},
-        {QStringLiteral("disabled"), QStringLiteral("Disabled")},
+        {QStringLiteral("same_name_only"), QStringLiteral("Same file name only")},
+        {QStringLiteral("same_name_language"), QStringLiteral("Same name + language suffix")},
+        {QStringLiteral("same_folder_any"), QStringLiteral("Any subtitle in same folder")},
+        {QStringLiteral("manual_only"), QStringLiteral("Manual only")},
     };
     return options;
 }
@@ -185,19 +185,35 @@ QVector<SubtitleChoiceOption> subtitleAutoLoadModeOptions()
 
 QString normalizeSubtitleAutoLoadMode(const QString &mode)
 {
-    return normalizeChoice(mode, subtitleAutoLoadModeStorage(), QStringLiteral("same_name"));
+    const QString normalized = mode.trimmed().toLower();
+    if (normalized == QStringLiteral("same_name")
+        || normalized == QStringLiteral("exact")) {
+        return QStringLiteral("same_name_only");
+    }
+    if (normalized == QStringLiteral("fuzzy")) {
+        return QStringLiteral("same_name_language");
+    }
+    if (normalized == QStringLiteral("all")) {
+        return QStringLiteral("same_folder_any");
+    }
+    if (normalized == QStringLiteral("disabled")
+        || normalized == QStringLiteral("off")
+        || normalized == QStringLiteral("no")) {
+        return QStringLiteral("manual_only");
+    }
+    return normalizeChoice(normalized, subtitleAutoLoadModeStorage(), QStringLiteral("same_name_only"));
 }
 
 QString subtitleAutoLoadModeMpvValue(const QString &mode)
 {
     const QString normalized = normalizeSubtitleAutoLoadMode(mode);
-    if (normalized == QStringLiteral("all")) {
+    if (normalized == QStringLiteral("same_folder_any")) {
         return QStringLiteral("all");
     }
-    if (normalized == QStringLiteral("fuzzy")) {
+    if (normalized == QStringLiteral("same_name_language")) {
         return QStringLiteral("fuzzy");
     }
-    if (normalized == QStringLiteral("disabled")) {
+    if (normalized == QStringLiteral("manual_only")) {
         return QStringLiteral("no");
     }
     return QStringLiteral("exact");
@@ -205,7 +221,7 @@ QString subtitleAutoLoadModeMpvValue(const QString &mode)
 
 QString defaultSubtitleAutoExtensions()
 {
-    return QStringLiteral("ass,idx,lrc,mks,pgs,rt,sbv,scc,smi,srt,ssa,sub,sup,utf,utf-8,utf8,vtt");
+    return QStringLiteral("ass,dfxp,idx,lrc,mpl,mpl2,pgs,rt,sami,sbv,scc,smi,srt,ssa,sub,sup,ttml,txt,usf,vtt,webvtt");
 }
 
 QString normalizeSubtitleAutoExtensions(const QString &extensions)

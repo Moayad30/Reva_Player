@@ -90,4 +90,12 @@ For cleanup behavior, see [reference/PURGE_LOCAL_DATA.md](reference/PURGE_LOCAL_
 | Video does not render | Try X11 vs Wayland with `QT_QPA_PLATFORM=xcb` or `QT_QPA_PLATFORM=wayland`. |
 | Settings/history do not persist | Check database path and write permissions. |
 | Subtitles do not load | Verify file path, subtitle format, and libmpv support. |
+
+## Permissions And Data Access
+
+- Reva Player does not require `sudo` and does not require full-disk-access permission.
+- The app reads only media files and folders explicitly selected by the user through open dialogs or drag/drop.
+- Reva Player writes local app data only: settings, history, bookmarks, resume state, and related local UI state.
+- Local data is stored in the app-local storage paths documented in `docs/reference/STORAGE_PATHS.md`.
+- Reva Player does not read `~/.config/mpv` by default (isolated mpv behavior is used unless changed in source code).
 | File dialog does not look native | See [FILE_DIALOGS.md](FILE_DIALOGS.md). |

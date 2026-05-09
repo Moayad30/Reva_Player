@@ -22,6 +22,13 @@ QStringList getOpenFileNames(
     const QString &filter = QString {},
     QFileDialog::Options options = {});
 
+QStringList getOpenMediaFileNames(
+    QWidget *parent,
+    const QString &caption,
+    const QString &directory,
+    const QString &filter = QString {},
+    QFileDialog::Options options = {});
+
 QString getSaveFileName(
     QWidget *parent,
     const QString &caption,

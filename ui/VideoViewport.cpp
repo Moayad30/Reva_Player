@@ -10,6 +10,7 @@
 #include <QEvent>
 #include <QColor>
 #include <QApplication>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
@@ -74,6 +75,46 @@ QColor blendColors(const QColor &from, const QColor &to, const qreal ratio)
 }
 
 constexpr qreal kTouchpadPixelsPerWheelStep = 30.0;
+
+QColor volumeLowColor()
+{
+    return QColor(QStringLiteral("#ffb55f"));
+}
+
+QColor volumeMidColor()
+{
+    return QColor(QStringLiteral("#ff9d18"));
+}
+
+QColor volumeNormalLimitColor()
+{
+    return QColor(QStringLiteral("#ff9d18"));
+}
+
+QColor volumeBoostEndColor()
+{
+    return QColor(QStringLiteral("#ff5a00"));
+}
+
+QColor volumeBoostStartColor()
+{
+    return QColor(QStringLiteral("#ff5a00"));
+}
+
+QColor volumeColorForNormalLevel(const qreal level)
+{
+    const qreal normalizedLevel = std::clamp(level, 0.0, 1.0);
+    if (normalizedLevel < 0.62) {
+        return blendColors(volumeLowColor(), volumeMidColor(), normalizedLevel / 0.62);
+    }
+
+    return blendColors(volumeMidColor(), volumeNormalLimitColor(), (normalizedLevel - 0.62) / 0.38);
+}
+
+QColor volumeColorForBoostLevel(const qreal level)
+{
+    return blendColors(volumeBoostStartColor(), volumeBoostEndColor(), std::clamp(level, 0.0, 1.0));
+}
 
 }  // namespace
 
@@ -167,6 +208,7 @@ VideoViewport::VideoViewport(QWidget *parent)
     volumeOverlayValueFont.setBold(true);
     volumeOverlayValueFont.setPixelSize(20);
     volumeOverlayValueLabel_->setFont(volumeOverlayValueFont);
+    volumeOverlayValueLabel_->setFixedWidth(QFontMetrics(volumeOverlayValueFont).horizontalAdvance(QStringLiteral("150%")) + 2);
 
     volumeOverlayHeaderLayout->addWidget(volumeOverlayTextLabel_, 0, Qt::AlignHCenter);
     volumeOverlayHeaderLayout->addWidget(volumeOverlayValueLabel_, 0, Qt::AlignHCenter);
@@ -207,10 +249,11 @@ void VideoViewport::setRenderHostVisible(const bool visible)
     }
 
     renderHost_->setVisible(visible);
-    if (!visible) {
-        overlayLabel_->raise();
-        updateOverlayGeometry();
+    if (visible) {
+        renderHost_->update();
     }
+    overlayLabel_->raise();
+    updateOverlayGeometry();
 }
 
 void VideoViewport::setOverlayText(const QString &text)
@@ -524,6 +567,24 @@ bool VideoViewport::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
+void VideoViewport::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event == nullptr) {
+        return;
+    }
+
+    switch (event->type()) {
+    case QEvent::PaletteChange:
+    case QEvent::StyleChange:
+        updateVolumeOverlayMeter();
+        updateOverlayGeometry();
+        break;
+    default:
+        break;
+    }
+}
+
 void VideoViewport::mouseDoubleClickEvent(QMouseEvent *event)
 {
     clearPendingClick();
@@ -566,8 +627,9 @@ void VideoViewport::updateOverlayGeometry()
         const int actionOverlayWidth = std::clamp(width() - 120, 220, 420);
         actionOverlayLabel_->setFixedWidth(actionOverlayWidth);
         actionOverlayLabel_->adjustSize();
-        actionOverlayLabel_->move((width() - actionOverlayLabel_->width()) / 2,
-                                  std::max(20, height() - actionOverlayLabel_->height() - 118));
+        actionOverlayLabel_->move(
+            std::max(16, width() / 48),
+            std::max(16, height() / 36));
         actionOverlayLabel_->raise();
     }
 
@@ -581,12 +643,15 @@ void VideoViewport::updateOverlayGeometry()
         }
         volumeOverlayTextLabel_->adjustSize();
         if (volumeOverlayValueLabel_ != nullptr) {
+            const QFontMetrics valueMetrics(volumeOverlayValueLabel_->font());
+            volumeOverlayValueLabel_->setFixedWidth(
+                valueMetrics.horizontalAdvance(QStringLiteral("%1%").arg(volumeOverlayMaximum_)) + 2);
             volumeOverlayValueLabel_->adjustSize();
         }
         volumeOverlayWidget_->adjustSize();
         volumeOverlayWidget_->move(
-            std::max(18, width() - volumeOverlayWidget_->width() - 26),
-            std::max(18, (height() - volumeOverlayWidget_->height()) / 2));
+            std::max(16, width() - volumeOverlayWidget_->width() - std::max(16, width() / 48)),
+            std::max(56, (height() / 36) + (actionOverlayLabel_ != nullptr ? actionOverlayLabel_->height() + 10 : 0)));
         updateVolumeOverlayMeter();
         volumeOverlayWidget_->raise();
     }
@@ -682,14 +747,20 @@ void VideoViewport::updateVolumeOverlayMeter()
               0.0,
               1.0)
         : 0.0;
-    const QColor baseColor(QStringLiteral("#ff9f2f"));
-    const QColor boostColor = boostValue > 0
-        ? blendColors(QColor(QStringLiteral("#ff7a00")), QColor(QStringLiteral("#ff5200")), boostRatio)
-        : baseColor;
-    volumeOverlayMeterFill_->setStyleSheet(QStringLiteral("background:%1; border:none; border-radius:999px;").arg(baseColor.name()));
-    volumeOverlayMeterBoostFill_->setStyleSheet(QStringLiteral("background:%1; border:none; border-radius:999px;").arg(boostColor.name()));
+    const double normalLevel = volumeOverlayNormalMaximum_ > 0
+        ? std::clamp(static_cast<double>(baseValue) / volumeOverlayNormalMaximum_, 0.0, 1.0)
+        : 0.0;
+    const QColor baseColor = volumeColorForNormalLevel(normalLevel);
+    const QColor boostColor = volumeColorForBoostLevel(boostRatio);
+    volumeOverlayMeterFill_->setStyleSheet(
+        QStringLiteral("background:%1; border:none; border-radius:999px;")
+            .arg(baseColor.name(QColor::HexRgb)));
+    volumeOverlayMeterBoostFill_->setStyleSheet(
+        QStringLiteral("background:%1; border:none; border-radius:999px;")
+            .arg(boostColor.name(QColor::HexRgb)));
     if (volumeOverlayValueLabel_ != nullptr) {
-        volumeOverlayValueLabel_->setStyleSheet(QStringLiteral("color:%1;").arg((boostValue > 0 ? boostColor : baseColor).name()));
+        volumeOverlayValueLabel_->setStyleSheet(QStringLiteral("color:%1;")
+                                                    .arg((boostValue > 0 ? boostColor : baseColor).name(QColor::HexRgb)));
     }
 
     if (totalHeight > 0) {

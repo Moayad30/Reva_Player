@@ -1,6 +1,5 @@
 #include "ui/SettingsDialog.hpp"
 
-#include "application/CustomCommandScript.hpp"
 #include "application/HistoryController.hpp"
 #include "application/PlaybackTuning.hpp"
 #include "application/SettingsController.hpp"
@@ -35,7 +34,6 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -48,9 +46,9 @@
 #include <QStyle>
 #include <QTabWidget>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <algorithm>
-#include <cmath>
 #include <limits>
 
 namespace revaplayer::ui {
@@ -158,9 +156,11 @@ struct ThumbnailPreviewSizePreset {
 };
 
 constexpr ThumbnailPreviewSizePreset kThumbnailPreviewSizePresets[] {
-    {"small", "Small", 320, 288},
-    {"normal", "Normal", 416, 352},
-    {"large", "Large", 512, 416},
+    {"small", "صغير", 360, 320},
+    {"normal", "وسط", 560, 480},
+    {"large", "كبير", 860, 760},
+    {"xlarge", "كبير جدا", 1280, 1120},
+    {"cinema", "كبير جدا جدا", 1800, 1600},
 };
 
 constexpr auto kDashboardContinueSectionSetting = "ui/dashboard_section_continue";
@@ -341,13 +341,6 @@ void updateSubtitleColorButton(QPushButton *button, const QColor &requestedColor
             .arg(colorName, foreground.name(QColor::HexRgb)));
 }
 
-QColor withAlphaPercent(const QColor &color, const int opacityPercent)
-{
-    QColor result = color;
-    result.setAlpha(static_cast<int>(std::lround((std::clamp(opacityPercent, 0, 100) / 100.0) * 255.0)));
-    return result;
-}
-
 }  // namespace
 
 SettingsDialog::SettingsDialog(revaplayer::application::SettingsController *settingsController,
@@ -372,20 +365,40 @@ SettingsDialog::SettingsDialog(revaplayer::application::SettingsController *sett
     loadSettings();
 }
 
+bool SettingsDialog::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != nullptr && event != nullptr && event->type() == QEvent::Wheel) {
+        QWidget *widget = qobject_cast<QWidget *>(watched);
+        if (widget != nullptr) {
+            const bool isWheelValueControl = qobject_cast<QAbstractSpinBox *>(widget) != nullptr
+                || qobject_cast<QComboBox *>(widget) != nullptr
+                || qobject_cast<QFontComboBox *>(widget) != nullptr;
+            if (isWheelValueControl && !widget->hasFocus()) {
+                event->ignore();
+                return true;
+            }
+        }
+    }
+
+    return QDialog::eventFilter(watched, event);
+}
+
 void SettingsDialog::applySettings()
 {
     if (settingsController_ == nullptr) {
         return;
     }
 
-    commitCustomCommandEditor();
-
     settingsController_->setRememberWindowState(rememberWindowStateCheckBox_->isChecked());
     settingsController_->setRememberLastOpenDirectory(rememberLastDirectoryCheckBox_->isChecked());
     settingsController_->setInterfaceLanguage(interfaceLanguageComboBox_->currentData().toString());
     settingsController_->setUiTheme(themeComboBox_->currentData().toString());
     settingsController_->setCustomValue(QStringLiteral("ui/accent"), themeAccentComboBox_->currentData().toString());
-    settingsController_->setCustomValue(QStringLiteral("ui/density"), uiDensityComboBox_->currentData().toString());
+    settingsController_->setCustomValue(
+        QStringLiteral("ui/density"),
+        uiDensityComboBox_ != nullptr
+            ? uiDensityComboBox_->currentData().toString()
+            : QStringLiteral("normal"));
     settingsController_->setCustomValue(
         QString::fromLatin1(kStartupCanvasStyleSetting),
         startupCanvasStyleComboBox_ != nullptr
@@ -395,9 +408,7 @@ void SettingsDialog::applySettings()
     settingsController_->setCustomValue(
         QStringLiteral("ui/dashboard_enabled"),
         dashboardEnabledCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
-    settingsController_->setCustomValue(
-        QStringLiteral("ui/dashboard_show_on_idle"),
-        dashboardShowOnIdleCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
+    settingsController_->setCustomValue(QStringLiteral("ui/dashboard_show_on_idle"), QStringLiteral("1"));
     settingsController_->setCustomValue(
         QString::fromLatin1(kDashboardContinueSectionSetting),
         dashboardShowContinueCheckBox_ != nullptr && dashboardShowContinueCheckBox_->isChecked()
@@ -434,15 +445,14 @@ void SettingsDialog::applySettings()
     settingsController_->setShowMenuBarInWindowedMode(showMenuBarCheckBox_->isChecked());
     settingsController_->setShowStatusBarInWindowedMode(showStatusBarCheckBox_->isChecked());
     settingsController_->setCustomValue(QString::fromLatin1(kWindowChromeUserDefinedSetting), QStringLiteral("1"));
-    settingsController_->setAlwaysOnTopEnabled(alwaysOnTopCheckBox_->isChecked());
+    settingsController_->setAlwaysOnTopEnabled(false);
     settingsController_->setOverlayPanelsOnVideo(overlayPanelsOnVideoCheckBox_->isChecked());
     settingsController_->setResumeEnabled(resumePlaybackCheckBox_->isChecked());
     settingsController_->setHistoryEnabled(rememberHistoryCheckBox_->isChecked());
     settingsController_->setClearHistoryOnExit(clearHistoryOnExitCheckBox_->isChecked());
     settingsController_->setPlaybackProfile(
         revaplayer::domain::playerProfileFromId(profileComboBox_->currentData().toString()));
-    settingsController_->setUseExternalMpvConfig(
-        externalMpvConfigCheckBox_ != nullptr && externalMpvConfigCheckBox_->isChecked());
+    settingsController_->setUseExternalMpvConfig(false);
     settingsController_->setShowPlaylistPanelOnStartup(showPlaylistPanelCheckBox_->isChecked());
     settingsController_->setShowDetailsPanelOnStartup(showDetailsPanelCheckBox_->isChecked());
     settingsController_->setRestoreSidePanelsFromWindowState(
@@ -572,18 +582,22 @@ void SettingsDialog::applySettings()
         subtitleAutoLoadModeComboBox_->currentData().toString());
     settingsController_->setSubtitleAutoLoadLocalMatches(
         subtitleAutoLoadLocalMatchesCheckBox_ != nullptr
-            ? (subtitleAutoLoadLocalMatchesCheckBox_->isChecked() && subtitleAutoLoadMode != QStringLiteral("disabled"))
-            : (subtitleAutoLoadMode != QStringLiteral("disabled")));
+            ? (subtitleAutoLoadLocalMatchesCheckBox_->isChecked()
+                && subtitleAutoLoadMode != QStringLiteral("manual_only"))
+            : (subtitleAutoLoadMode != QStringLiteral("manual_only")));
     settingsController_->setSubtitlePreferredLanguages(subtitlePreferredLanguagesEdit_->text());
     settingsController_->setSubtitleSyncSmallStep(subtitleSyncSmallStepSpinBox_->value());
-    settingsController_->setSubtitleSyncLargeStep(subtitleSyncLargeStepSpinBox_->value());
-    settingsController_->setSubtitleDownloadCommand(subtitleDownloadCommandEdit_->text());
     settingsController_->setCustomValue(
         QString::fromLatin1(revaplayer::application::kSubtitleAutoLoadModeSetting),
         subtitleAutoLoadMode);
     settingsController_->setCustomValue(
         QString::fromLatin1(revaplayer::application::kSubtitleAutoExtensionsSetting),
-        revaplayer::application::normalizeSubtitleAutoExtensions(subtitleAutoExtensionsEdit_->text()));
+        revaplayer::application::normalizeSubtitleAutoExtensions(
+            subtitleAutoExtensionsEdit_ != nullptr
+                ? subtitleAutoExtensionsEdit_->text()
+                : settingsController_->customValue(
+                    QString::fromLatin1(revaplayer::application::kSubtitleAutoExtensionsSetting),
+                    revaplayer::application::defaultSubtitleAutoExtensions())));
     settingsController_->setCustomValue(
         QString::fromLatin1(revaplayer::application::kSubtitleRememberTrackChoiceSetting),
         subtitleRememberTrackChoiceCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
@@ -730,7 +744,6 @@ void SettingsDialog::applySettings()
         mouseZoneCenterActionComboBox_->currentData().toString());
     settingsController_->setCustomValue(QStringLiteral("capture/screenshot_format"), screenshotFormatComboBox_->currentData().toString());
     settingsController_->setCustomValue(QStringLiteral("capture/screenshot_template"), screenshotTemplateEdit_->text().trimmed());
-    settingsController_->setCustomCommands(customCommands_);
 
     for (const auto &row : shortcutEditors_) {
         const QString currentPortableText = row.editor->keySequence().toString(QKeySequence::PortableText).trimmed();
@@ -781,7 +794,7 @@ void SettingsDialog::buildUi()
     resumePlaybackCheckBox_ = new QCheckBox(uiText("Resume playback from the last saved position"), sessionGroup);
     sessionLayout->addWidget(rememberWindowStateCheckBox_);
     sessionLayout->addWidget(rememberLastDirectoryCheckBox_);
-    sessionLayout->addWidget(resumePlaybackCheckBox_);
+    resumePlaybackCheckBox_->setVisible(false);
 
     auto *layoutGroup = new QGroupBox(uiText("Panels"), advancedPage);
     auto *layoutBox = new QVBoxLayout(layoutGroup);
@@ -826,6 +839,7 @@ void SettingsDialog::buildUi()
     alwaysOnTopCheckBox_ = new QCheckBox(uiText("Keep the player window above other windows"), windowChromeGroup);
     windowChromeLayout->addWidget(showMenuBarCheckBox_);
     windowChromeLayout->addWidget(showStatusBarCheckBox_);
+    alwaysOnTopCheckBox_->setVisible(false);
     windowChromeLayout->addWidget(alwaysOnTopCheckBox_);
 
     auto *appearanceGroup = new QGroupBox(uiText("Appearance"), generalPage);
@@ -840,11 +854,7 @@ void SettingsDialog::buildUi()
         themeAccentComboBox_->addItem(revaplayer::application::translateUiText(accent.label), accent.id);
     }
     appearanceLayout->addRow(uiText("Accent color"), themeAccentComboBox_);
-    uiDensityComboBox_ = new QComboBox(appearanceGroup);
-    for (const auto &density : revaplayer::application::availableDensities()) {
-        uiDensityComboBox_->addItem(revaplayer::application::translateUiText(density.label), density.id);
-    }
-    appearanceLayout->addRow(uiText("UI density"), uiDensityComboBox_);
+    uiDensityComboBox_ = nullptr;
     startupCanvasStyleComboBox_ = new QComboBox(appearanceGroup);
     startupCanvasStyleComboBox_->addItem(uiText("Theme gradient"), QStringLiteral("theme"));
     startupCanvasStyleComboBox_->addItem(uiText("Pure black"), QStringLiteral("black"));
@@ -879,15 +889,16 @@ void SettingsDialog::buildUi()
     themeOverlayOpacitySpinBox_ = new QSpinBox(themeEditorGroup);
     themeOverlayOpacitySpinBox_->setRange(55, 98);
     themeOverlayOpacitySpinBox_->setSuffix(QStringLiteral("%"));
-    themeEditorLayout->addRow(uiText("Corner radius"), themeRadiusSpinBox_);
-    themeEditorLayout->addRow(uiText("UI spacing"), themeSpacingSpinBox_);
+    themeRadiusSpinBox_->setVisible(false);
+    themeSpacingSpinBox_->setVisible(false);
+    themeFontWeightSpinBox_->setVisible(false);
+    themeLetterSpacingSpinBox_->setVisible(false);
+    themeBorderContrastSpinBox_->setVisible(false);
+    themeShadowStrengthSpinBox_->setVisible(false);
+    themeBlurStrengthSpinBox_->setVisible(false);
+    themeOverlayOpacitySpinBox_->setVisible(false);
+    // Keep only font size/scale visible for the user in this section.
     themeEditorLayout->addRow(uiText("Font scale"), themeFontScaleSpinBox_);
-    themeEditorLayout->addRow(uiText("Font weight"), themeFontWeightSpinBox_);
-    themeEditorLayout->addRow(uiText("Letter spacing"), themeLetterSpacingSpinBox_);
-    themeEditorLayout->addRow(uiText("Border contrast"), themeBorderContrastSpinBox_);
-    themeEditorLayout->addRow(uiText("Shadow strength"), themeShadowStrengthSpinBox_);
-    themeEditorLayout->addRow(uiText("Blur strength"), themeBlurStrengthSpinBox_);
-    themeEditorLayout->addRow(uiText("Overlay opacity"), themeOverlayOpacitySpinBox_);
 
     auto *motionGroup = new QGroupBox(uiText("Motion & Adaptive UI"), generalPage);
     auto *motionLayout = new QFormLayout(motionGroup);
@@ -907,6 +918,7 @@ void SettingsDialog::buildUi()
     motionLayout->addRow(uiText("Panel easing"), themeAnimationEasingComboBox_);
     motionLayout->addRow(adaptiveUiCheckBox_);
     motionLayout->addRow(uiText("Adaptive breakpoint"), adaptiveUiBreakpointSpinBox_);
+    motionGroup->setVisible(false);
 
     auto *interfaceGroup = new QGroupBox(uiText("Interface"), generalPage);
     auto *interfaceLayout = new QFormLayout(interfaceGroup);
@@ -926,15 +938,11 @@ void SettingsDialog::buildUi()
     dashboardEnabledCheckBox_ = new QCheckBox(
         uiText("Show the new dashboard with continue watching, recent items, favorites, and saved lists"),
         dashboardGroup);
-    dashboardShowOnIdleCheckBox_ = new QCheckBox(
-        uiText("Display the dashboard when no media is loaded"),
-        dashboardGroup);
     dashboardShowContinueCheckBox_ = new QCheckBox(uiText("Show Continue Watching section"), dashboardGroup);
     dashboardShowRecentCheckBox_ = new QCheckBox(uiText("Show Recent section"), dashboardGroup);
     dashboardShowFavoritesCheckBox_ = new QCheckBox(uiText("Show Favorites section"), dashboardGroup);
     dashboardShowSavedListsCheckBox_ = new QCheckBox(uiText("Show Saved Lists section"), dashboardGroup);
     dashboardLayout->addRow(dashboardEnabledCheckBox_);
-    dashboardLayout->addRow(dashboardShowOnIdleCheckBox_);
     dashboardLayout->addRow(dashboardShowContinueCheckBox_);
     dashboardLayout->addRow(dashboardShowRecentCheckBox_);
     dashboardLayout->addRow(dashboardShowFavoritesCheckBox_);
@@ -948,7 +956,6 @@ void SettingsDialog::buildUi()
     generalLayout->addWidget(interfaceGroup);
     generalLayout->addWidget(appearanceGroup);
     generalLayout->addWidget(themeEditorGroup);
-    generalLayout->addWidget(motionGroup);
     generalLayout->addWidget(dashboardGroup);
     generalLayout->addWidget(storageInfoLabel_);
     generalLayout->addStretch(1);
@@ -979,10 +986,11 @@ void SettingsDialog::buildUi()
         volumeGroup);
     profileExplanationLabel->setWordWrap(true);
     volumeLayout->addRow(QString {}, profileExplanationLabel);
-    externalMpvConfigCheckBox_ = new QCheckBox(uiText("Use external mpv config and scripts"), volumeGroup);
+    externalMpvConfigCheckBox_ = new QCheckBox(uiText("Use external mpv config"), volumeGroup);
     setHoverExplanation(
         externalMpvConfigCheckBox_,
         uiText("When enabled, Reva allows the normal user mpv configuration directory. Leave this off for Reva's isolated bundled mpv setup."));
+    externalMpvConfigCheckBox_->setVisible(false);
     volumeLayout->addRow(QString {}, externalMpvConfigCheckBox_);
     startupVolumeModeComboBox_ = new QComboBox(volumeGroup);
     startupVolumeModeComboBox_->addItem(uiText("Remember last volume"), QStringLiteral("remember"));
@@ -1035,8 +1043,11 @@ void SettingsDialog::buildUi()
     volumeStepSpinBox_->setSuffix(QStringLiteral("%"));
     interactionLayout->addRow(uiText("Volume step"), volumeStepSpinBox_);
 
-    auto *videoZoomGroup = new QGroupBox(uiText("Video Zoom"), playbackPage);
+    auto *videoZoomGroup = new QGroupBox(uiText("Zoom"), playbackPage);
     auto *videoZoomLayout = new QFormLayout(videoZoomGroup);
+    videoZoomLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    videoZoomLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    videoZoomLayout->setLabelAlignment(Qt::AlignLeading | Qt::AlignVCenter);
     videoZoomStepSpinBox_ = new QDoubleSpinBox(videoZoomGroup);
     videoZoomStepSpinBox_->setRange(0.05, 1.00);
     videoZoomStepSpinBox_->setDecimals(2);
@@ -1093,8 +1104,6 @@ void SettingsDialog::buildUi()
     videoZoomFullscreenBehaviorComboBox_->addItem(uiText("Reset on Fullscreen Toggle"), QStringLiteral("reset_on_toggle"));
     videoZoomLayout->addRow(uiText("Fullscreen transition"), videoZoomFullscreenBehaviorComboBox_);
 
-    resetVideoZoomSettingsButton_ = new QPushButton(uiText("Reset Zoom Settings to Defaults"), videoZoomGroup);
-    videoZoomLayout->addRow(QString(), resetVideoZoomSettingsButton_);
     auto *videoZoomHint = new QLabel(
         uiText("Keyboard zoom shortcuts remain available. These settings control how far zoom can go, how wheel gestures behave, and whether manual zoom is remembered."),
         videoZoomGroup);
@@ -1228,16 +1237,18 @@ void SettingsDialog::buildUi()
     gesturesLayout->addRow(uiText("Gesture Right"), gestureRightActionComboBox_);
     gesturesLayout->addRow(uiText("Gesture Up"), gestureUpActionComboBox_);
     gesturesLayout->addRow(uiText("Gesture Down"), gestureDownActionComboBox_);
+    gesturesGroup->setVisible(false);
 
     auto *fullscreenGroup = new QGroupBox(uiText("Fullscreen"), advancedPage);
     auto *fullscreenLayout = new QFormLayout(fullscreenGroup);
     fullscreenAutoHideCheckBox_ = new QCheckBox(uiText("Hide menu, panels, and controls automatically in fullscreen"), fullscreenGroup);
-    fullscreenLayout->addRow(uiText("Auto-hide UI"), fullscreenAutoHideCheckBox_);
+    fullscreenLayout->addRow(fullscreenAutoHideCheckBox_);
 
     fullscreenRevealMarginSpinBox_ = new QSpinBox(fullscreenGroup);
     fullscreenRevealMarginSpinBox_->setRange(16, 240);
     fullscreenRevealMarginSpinBox_->setSuffix(QStringLiteral(" px"));
     fullscreenLayout->addRow(uiText("Reveal edge margin"), fullscreenRevealMarginSpinBox_);
+    fullscreenLayout->setRowVisible(fullscreenRevealMarginSpinBox_, false);
 
     fullscreenEdgePanelsCheckBox_ = new QCheckBox(
         uiText("Open side panels when the pointer reaches the right edge in fullscreen"),
@@ -1297,6 +1308,8 @@ void SettingsDialog::buildUi()
     pointerLayout->addRow(uiText("Right-edge leave action"), pointerRightEdgeLeaveActionComboBox_);
     pointerLayout->addRow(uiText("Right-edge trigger margin"), pointerRightEdgeMarginSpinBox_);
     pointerLayout->addRow(uiText("Pointer leave delay"), pointerLeaveDelaySpinBox_);
+    pointerLayout->setRowVisible(pointerRightEdgeMarginSpinBox_, false);
+    pointerLayout->setRowVisible(pointerLeaveDelaySpinBox_, false);
     pointerLayout->addRow(pointerKeepControlsVisibleCheckBox_);
     auto *pointerNote = new QLabel(
         uiText("When the pointer touches the right edge, you can reveal the default panel, force a specific panel, or do nothing. Leave action controls what happens after the pointer leaves the edge or exits the video."),
@@ -1345,28 +1358,27 @@ void SettingsDialog::buildUi()
     controlBarTimelineThicknessSpinBox_->setRange(4, 18);
     controlBarTimelineThicknessSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Timeline thickness"), controlBarTimelineThicknessSpinBox_);
+    controlBarAppearanceLayout->setRowVisible(controlBarTimelineThicknessSpinBox_, false);
 
     controlBarTimelineHandleSizeSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarTimelineHandleSizeSpinBox_->setRange(10, 30);
     controlBarTimelineHandleSizeSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Timeline handle size"), controlBarTimelineHandleSizeSpinBox_);
+    controlBarAppearanceLayout->setRowVisible(controlBarTimelineHandleSizeSpinBox_, false);
 
     controlBarVolumeSliderThicknessSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarVolumeSliderThicknessSpinBox_->setRange(4, 18);
     controlBarVolumeSliderThicknessSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Volume slider thickness"), controlBarVolumeSliderThicknessSpinBox_);
+    controlBarAppearanceLayout->setRowVisible(controlBarVolumeSliderThicknessSpinBox_, false);
 
     controlBarVolumeSliderWidthSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarVolumeSliderWidthSpinBox_->setRange(0, 320);
     controlBarVolumeSliderWidthSpinBox_->setSpecialValueText(uiText("Auto"));
     controlBarVolumeSliderWidthSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Volume slider width"), controlBarVolumeSliderWidthSpinBox_);
-    auto *controlBarGeometryNote = new QLabel(
-        uiText("These controls change the control bar geometry directly. Increase width or thickness here when you want a visibly different layout."),
-        controlBarAppearanceGroup);
-    controlBarGeometryNote->setWordWrap(true);
-    controlBarAppearanceLayout->addRow(controlBarGeometryNote);
-
+    controlBarAppearanceLayout->setRowVisible(controlBarVolumeSliderWidthSpinBox_, false);
+    Q_UNUSED(controlBarAppearanceGroup);
     auto *controlBarVisibilityGroup = new QGroupBox(uiText("Control Bar Visibility"), playbackPage);
     auto *controlBarVisibilityLayout = new QVBoxLayout(controlBarVisibilityGroup);
     expressiveControlLabelsCheckBox_ = new QCheckBox(uiText("Use compact icon-only labels on the playback bar"), controlBarVisibilityGroup);
@@ -1404,20 +1416,20 @@ void SettingsDialog::buildUi()
     }
     setHoverExplanation(
         thumbnailPreviewSizeComboBox_,
-        uiText("Choose one of three fixed preview sizes for the timeline thumbnail popup."));
+        uiText("Choose a fixed preview size for the timeline thumbnail popup."));
     thumbnailsLayout->addRow(uiText("Timeline preview size"), thumbnailPreviewSizeComboBox_);
 
     thumbnailWidthSpinBox_ = new QSpinBox(thumbnailsGroup);
-    thumbnailWidthSpinBox_->setRange(0, 640);
+    thumbnailWidthSpinBox_->setRange(0, 2200);
     thumbnailWidthSpinBox_->setSingleStep(16);
-    thumbnailWidthSpinBox_->setSpecialValueText(QStringLiteral("Auto"));
+    thumbnailWidthSpinBox_->setSpecialValueText(uiText("Auto"));
     thumbnailWidthSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailWidthSpinBox_->hide();
 
     thumbnailPopupWidthSpinBox_ = new QSpinBox(thumbnailsGroup);
-    thumbnailPopupWidthSpinBox_->setRange(0, 480);
+    thumbnailPopupWidthSpinBox_->setRange(0, 1800);
     thumbnailPopupWidthSpinBox_->setSingleStep(16);
-    thumbnailPopupWidthSpinBox_->setSpecialValueText(QStringLiteral("Auto"));
+    thumbnailPopupWidthSpinBox_->setSpecialValueText(uiText("Auto"));
     thumbnailPopupWidthSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailPopupWidthSpinBox_->hide();
 
@@ -1425,11 +1437,13 @@ void SettingsDialog::buildUi()
     thumbnailPopupOffsetSpinBox_->setRange(8, 56);
     thumbnailPopupOffsetSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailsLayout->addRow(uiText("Timeline popup vertical offset"), thumbnailPopupOffsetSpinBox_);
+    thumbnailsLayout->setRowVisible(thumbnailPopupOffsetSpinBox_, false);
 
     thumbnailPopupPaddingSpinBox_ = new QSpinBox(thumbnailsGroup);
     thumbnailPopupPaddingSpinBox_->setRange(0, 32);
     thumbnailPopupPaddingSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailsLayout->addRow(uiText("Timeline popup screen padding"), thumbnailPopupPaddingSpinBox_);
+    thumbnailsLayout->setRowVisible(thumbnailPopupPaddingSpinBox_, false);
 
     auto *sceneBrowserGroup = new QGroupBox(uiText("Scene Browser"), advancedPage);
     auto *sceneBrowserLayout = new QFormLayout(sceneBrowserGroup);
@@ -1539,9 +1553,6 @@ void SettingsDialog::buildUi()
         gestureDownActionComboBox_->setEnabled(checked);
     });
     const auto syncDashboardSectionControls = [this](const bool enabled) {
-        if (dashboardShowOnIdleCheckBox_ != nullptr) {
-            dashboardShowOnIdleCheckBox_->setEnabled(enabled);
-        }
         if (dashboardShowContinueCheckBox_ != nullptr) {
             dashboardShowContinueCheckBox_->setEnabled(enabled);
         }
@@ -1608,7 +1619,7 @@ void SettingsDialog::buildUi()
 
     screenshotDirectoryEdit_ = new QLineEdit(directoryRow);
     screenshotDirectoryEdit_->setPlaceholderText(QStringLiteral("Pictures/Reva Player"));
-    auto *browseButton = new QPushButton(uiText("Browse..."), directoryRow);
+    auto *browseButton = new QPushButton(uiText("Browse"), directoryRow);
     directoryLayout->addWidget(screenshotDirectoryEdit_, 1);
     directoryLayout->addWidget(browseButton, 0);
     captureLayout->addRow(uiText("Save screenshots to"), directoryRow);
@@ -1648,7 +1659,7 @@ void SettingsDialog::buildUi()
     advancedLayout->addWidget(historyGroup);
     advancedLayout->addWidget(layoutGroup);
     advancedLayout->addWidget(mouseGroup);
-    advancedLayout->addWidget(gesturesGroup);
+    gesturesGroup->setVisible(false);
     advancedLayout->addWidget(fullscreenGroup);
     advancedLayout->addWidget(pointerGroup);
     advancedLayout->addWidget(mouseZonesGroup);
@@ -1662,79 +1673,16 @@ void SettingsDialog::buildUi()
     subtitleLayout->setContentsMargins(18, 18, 18, 18);
     subtitleLayout->setSpacing(14);
 
-    auto *subtitleBehaviorGroup = new QGroupBox(uiText("Subtitle Display"), subtitleSectionPage);
+    auto *subtitleBehaviorGroup = new QGroupBox(uiText("Basic Controls"), subtitleSectionPage);
+    subtitleBehaviorGroup->setObjectName(QStringLiteral("subtitleBasicGroup"));
     auto *subtitleBehaviorLayout = new QFormLayout(subtitleBehaviorGroup);
+    subtitleBehaviorLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    subtitleBehaviorLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
     subtitleVisibleCheckBox_ = new QCheckBox(uiText("Show subtitles by default"), subtitleBehaviorGroup);
     setHoverExplanation(subtitleVisibleCheckBox_, uiText("Enable or disable subtitle visibility. The live preview updates immediately."));
     subtitleBehaviorLayout->addRow(uiText("Visibility"), subtitleVisibleCheckBox_);
 
-    subtitleScaleSpinBox_ = new QDoubleSpinBox(subtitleBehaviorGroup);
-    subtitleScaleSpinBox_->setRange(0.25, 5.0);
-    subtitleScaleSpinBox_->setDecimals(2);
-    subtitleScaleSpinBox_->setSingleStep(0.05);
-    subtitleScaleSpinBox_->setSuffix(QStringLiteral("x"));
-    setHoverExplanation(subtitleScaleSpinBox_, uiText("Adjust subtitle size and preview the new scale immediately."));
-    subtitleBehaviorLayout->addRow(uiText("Scale"), subtitleScaleSpinBox_);
-
-    subtitlePositionSpinBox_ = new QSpinBox(subtitleBehaviorGroup);
-    subtitlePositionSpinBox_->setRange(0, 150);
-    subtitlePositionSpinBox_->setSuffix(QStringLiteral("%"));
-    setHoverExplanation(subtitlePositionSpinBox_, uiText("Move subtitles higher or lower on the frame while the preview updates live."));
-    subtitleBehaviorLayout->addRow(uiText("Vertical position"), subtitlePositionSpinBox_);
-
-    subtitleAlignYComboBox_ = new QComboBox(subtitleBehaviorGroup);
-    for (const auto &option : revaplayer::application::subtitleAlignYOptions()) {
-        subtitleAlignYComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleBehaviorLayout->addRow(uiText("Frame alignment"), subtitleAlignYComboBox_);
-
-    subtitleAlignXComboBox_ = new QComboBox(subtitleBehaviorGroup);
-    for (const auto &option : revaplayer::application::subtitleAlignXOptions()) {
-        subtitleAlignXComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleBehaviorLayout->addRow(uiText("Horizontal anchor"), subtitleAlignXComboBox_);
-
-    subtitleJustifyComboBox_ = new QComboBox(subtitleBehaviorGroup);
-    for (const auto &option : revaplayer::application::subtitleJustifyOptions()) {
-        subtitleJustifyComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleBehaviorLayout->addRow(uiText("Text alignment"), subtitleJustifyComboBox_);
-
-    subtitleMaxWidthSpinBox_ = new QDoubleSpinBox(subtitleBehaviorGroup);
-    subtitleMaxWidthSpinBox_->setRange(30.0, 100.0);
-    subtitleMaxWidthSpinBox_->setDecimals(1);
-    subtitleMaxWidthSpinBox_->setSingleStep(2.0);
-    subtitleMaxWidthSpinBox_->setSuffix(QStringLiteral("%"));
-    subtitleBehaviorLayout->addRow(uiText("Max subtitle width"), subtitleMaxWidthSpinBox_);
-
-    subtitleUseMarginsCheckBox_ = new QCheckBox(uiText("Keep subtitles inside the renderer margins"), subtitleBehaviorGroup);
-    subtitleBehaviorLayout->addRow(subtitleUseMarginsCheckBox_);
-
-    subtitleMarginXSpinBox_ = new QSpinBox(subtitleBehaviorGroup);
-    subtitleMarginXSpinBox_->setRange(0, 300);
-    subtitleMarginXSpinBox_->setSuffix(QStringLiteral(" px"));
-    subtitleBehaviorLayout->addRow(uiText("Safe area horizontal margin"), subtitleMarginXSpinBox_);
-
-    subtitleMarginYSpinBox_ = new QSpinBox(subtitleBehaviorGroup);
-    subtitleMarginYSpinBox_->setRange(0, 600);
-    subtitleMarginYSpinBox_->setSuffix(QStringLiteral(" px"));
-    subtitleBehaviorLayout->addRow(uiText("Safe area bottom / edge margin"), subtitleMarginYSpinBox_);
-
-    auto *subtitleAutomationGroup = new QGroupBox(uiText("Automation"), subtitleSectionPage);
-    auto *subtitleAutomationLayout = new QFormLayout(subtitleAutomationGroup);
-    subtitleAutoSelectCheckBox_ = new QCheckBox(uiText("Automatically select the best subtitle track"), subtitleAutomationGroup);
-    subtitlePreferExternalCheckBox_ = new QCheckBox(uiText("Prefer external subtitle tracks when available"), subtitleAutomationGroup);
-    subtitleAutoLoadLocalMatchesCheckBox_ = new QCheckBox(uiText("Auto-load matching subtitle files from the media folder"), subtitleAutomationGroup);
-    subtitleAutoLoadLocalMatchesCheckBox_->setObjectName(QStringLiteral("subtitleAutoLoadLocalMatchesCheckBox"));
-    subtitleAutomationLayout->addRow(subtitleAutoSelectCheckBox_);
-    subtitleAutomationLayout->addRow(subtitlePreferExternalCheckBox_);
-    subtitleAutomationLayout->addRow(subtitleAutoLoadLocalMatchesCheckBox_);
-
-    subtitlePreferredLanguagesEdit_ = new QLineEdit(subtitleAutomationGroup);
-    subtitlePreferredLanguagesEdit_->setPlaceholderText(QStringLiteral("ar,en,ja"));
-    subtitleAutomationLayout->addRow(uiText("Preferred languages"), subtitlePreferredLanguagesEdit_);
-
-    subtitleAutoLoadModeComboBox_ = new QComboBox(subtitleAutomationGroup);
+    subtitleAutoLoadModeComboBox_ = new QComboBox(subtitleBehaviorGroup);
     subtitleAutoLoadModeComboBox_->setObjectName(QStringLiteral("subtitleAutoLoadModeComboBox"));
     for (const auto &option : revaplayer::application::subtitleAutoLoadModeOptions()) {
         subtitleAutoLoadModeComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
@@ -1742,12 +1690,70 @@ void SettingsDialog::buildUi()
     setHoverExplanation(
         subtitleAutoLoadModeComboBox_,
         uiText("Control how Reva Player scans the current folder for external subtitle files before playback selects a track."));
-    subtitleAutomationLayout->addRow(uiText("External subtitle loading"), subtitleAutoLoadModeComboBox_);
+    subtitleBehaviorLayout->addRow(uiText("External subtitle loading"), subtitleAutoLoadModeComboBox_);
 
-    subtitleAutoExtensionsEdit_ = new QLineEdit(subtitleAutomationGroup);
-    subtitleAutoExtensionsEdit_->setObjectName(QStringLiteral("subtitleAutoExtensionsEdit"));
-    subtitleAutoExtensionsEdit_->setPlaceholderText(revaplayer::application::defaultSubtitleAutoExtensions());
-    subtitleAutomationLayout->addRow(uiText("Common subtitle extensions"), subtitleAutoExtensionsEdit_);
+    subtitleFontComboBox_ = new QFontComboBox(subtitleBehaviorGroup);
+    setHoverExplanation(subtitleFontComboBox_, uiText("Pick the font family that will be used for subtitle preview and playback."));
+    subtitleBehaviorLayout->addRow(uiText("Font family"), subtitleFontComboBox_);
+
+    subtitleFontSizeSpinBox_ = new QSpinBox(subtitleBehaviorGroup);
+    subtitleFontSizeSpinBox_->setRange(8, 144);
+    subtitleFontSizeSpinBox_->setSingleStep(2);
+    subtitleFontSizeSpinBox_->setSuffix(QStringLiteral(" px"));
+    setHoverExplanation(subtitleFontSizeSpinBox_, uiText("Adjust subtitle font size in pixels and preview the result instantly."));
+    subtitleBehaviorLayout->addRow(uiText("Font size"), subtitleFontSizeSpinBox_);
+
+    subtitleTextColorButton_ = new QPushButton(subtitleBehaviorGroup);
+    subtitleBehaviorLayout->addRow(uiText("Text color"), subtitleTextColorButton_);
+
+    subtitleOutlineColorButton_ = new QPushButton(subtitleBehaviorGroup);
+    subtitleBehaviorLayout->addRow(uiText("Outline color"), subtitleOutlineColorButton_);
+
+    subtitleBackgroundEnabledCheckBox_ = new QCheckBox(uiText("Enable background box"), subtitleBehaviorGroup);
+    subtitleBehaviorLayout->addRow(subtitleBackgroundEnabledCheckBox_);
+
+    subtitleBackgroundColorButton_ = new QPushButton(subtitleBehaviorGroup);
+    subtitleBehaviorLayout->addRow(uiText("Background color"), subtitleBackgroundColorButton_);
+
+    subtitlePositionSpinBox_ = new QSpinBox(subtitleBehaviorGroup);
+    subtitlePositionSpinBox_->setRange(0, 150);
+    subtitlePositionSpinBox_->setSuffix(QStringLiteral("%"));
+    setHoverExplanation(subtitlePositionSpinBox_, uiText("Move subtitles higher or lower on the frame while the preview updates live."));
+    subtitleBehaviorLayout->addRow(uiText("Vertical position"), subtitlePositionSpinBox_);
+
+    resetSubtitleStyleQuickButton_ = new QPushButton(uiText("Reset Subtitle Style"), subtitleBehaviorGroup);
+    resetSubtitleStyleQuickButton_->setVisible(false);
+
+    auto *subtitleAdvancedContainer = new QWidget(subtitleSectionPage);
+    subtitleAdvancedContainer->setObjectName(QStringLiteral("subtitleAdvancedContainer"));
+    auto *subtitleAdvancedContainerLayout = new QVBoxLayout(subtitleAdvancedContainer);
+    subtitleAdvancedContainerLayout->setContentsMargins(0, 0, 0, 0);
+    subtitleAdvancedContainerLayout->setSpacing(10);
+
+    auto *subtitleAutomationGroup = new QGroupBox(uiText("Advanced Playback Rules"), subtitleAdvancedContainer);
+    subtitleAutomationGroup->setObjectName(QStringLiteral("subtitleAdvancedRulesGroup"));
+    auto *subtitleAutomationLayout = new QFormLayout(subtitleAutomationGroup);
+    subtitleAutomationLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    subtitleAutomationLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+
+    subtitleAutoSelectCheckBox_ = new QCheckBox(uiText("Automatically select the best subtitle track"), subtitleAutomationGroup);
+    subtitlePreferExternalCheckBox_ = new QCheckBox(uiText("Prefer external subtitle tracks when available"), subtitleAutomationGroup);
+    subtitleAutoLoadLocalMatchesCheckBox_ = new QCheckBox(uiText("Enable auto-load subtitles from media folder"), subtitleAutomationGroup);
+    subtitleAutoLoadLocalMatchesCheckBox_->setObjectName(QStringLiteral("subtitleAutoLoadLocalMatchesCheckBox"));
+    subtitleAutoSelectCheckBox_->setVisible(false);
+    subtitlePreferExternalCheckBox_->setVisible(false);
+    subtitleAutomationLayout->addRow(subtitleAutoSelectCheckBox_);
+    subtitleAutomationLayout->addRow(subtitlePreferExternalCheckBox_);
+    subtitleAutomationLayout->addRow(subtitleAutoLoadLocalMatchesCheckBox_);
+
+    subtitlePreferredLanguagesEdit_ = new QLineEdit(subtitleAutomationGroup);
+    subtitlePreferredLanguagesEdit_->setPlaceholderText(QStringLiteral("ar,en,ja"));
+    subtitlePreferredLanguagesEdit_->setVisible(false);
+    subtitleAutomationLayout->addRow(uiText("Preferred languages"), subtitlePreferredLanguagesEdit_);
+    if (QWidget *preferredLanguagesLabel = subtitleAutomationLayout->labelForField(subtitlePreferredLanguagesEdit_);
+        preferredLanguagesLabel != nullptr) {
+        preferredLanguagesLabel->setVisible(false);
+    }
 
     subtitleRememberTrackChoiceCheckBox_ = new QCheckBox(uiText("Remember the last subtitle track choice for each media file"), subtitleAutomationGroup);
     subtitleAutomationLayout->addRow(subtitleRememberTrackChoiceCheckBox_);
@@ -1768,19 +1774,12 @@ void SettingsDialog::buildUi()
     subtitleSyncSmallStepSpinBox_->setSuffix(QStringLiteral(" s"));
     subtitleAutomationLayout->addRow(uiText("Fine sync step"), subtitleSyncSmallStepSpinBox_);
 
-    subtitleSyncLargeStepSpinBox_ = new QDoubleSpinBox(subtitleAutomationGroup);
-    subtitleSyncLargeStepSpinBox_->setRange(0.05, 10.0);
-    subtitleSyncLargeStepSpinBox_->setDecimals(2);
-    subtitleSyncLargeStepSpinBox_->setSingleStep(0.25);
-    subtitleSyncLargeStepSpinBox_->setSuffix(QStringLiteral(" s"));
-    subtitleAutomationLayout->addRow(uiText("Large sync step"), subtitleSyncLargeStepSpinBox_);
-
-    subtitleDownloadCommandEdit_ = new QLineEdit(subtitleAutomationGroup);
-    subtitleDownloadCommandEdit_->setPlaceholderText(QStringLiteral("subliminal download -l {languages} \"{file}\""));
-    subtitleAutomationLayout->addRow(uiText("Download command"), subtitleDownloadCommandEdit_);
-
-    auto *subtitleStyleGroup = new QGroupBox(uiText("Style"), subtitleSectionPage);
+    auto *subtitleStyleGroup = new QGroupBox(uiText("Advanced Style"), subtitleAdvancedContainer);
+    subtitleStyleGroup->setObjectName(QStringLiteral("subtitleAdvancedStyleGroup"));
     auto *subtitleStyleLayout = new QFormLayout(subtitleStyleGroup);
+    subtitleStyleLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    subtitleStyleLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+
     subtitleAssOverrideComboBox_ = new QComboBox(subtitleStyleGroup);
     for (const auto &option : revaplayer::application::subtitleAssOverrideOptions()) {
         subtitleAssOverrideComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
@@ -1788,15 +1787,12 @@ void SettingsDialog::buildUi()
     setHoverExplanation(subtitleAssOverrideComboBox_, uiText("Choose how strongly your own subtitle style should override embedded ASS styling."));
     subtitleStyleLayout->addRow(uiText("ASS / embedded style handling"), subtitleAssOverrideComboBox_);
 
-    subtitleFontComboBox_ = new QFontComboBox(subtitleStyleGroup);
-    setHoverExplanation(subtitleFontComboBox_, uiText("Pick the font family that will be used for subtitle preview and playback."));
-    subtitleStyleLayout->addRow(uiText("Font family"), subtitleFontComboBox_);
-
-    subtitleFontSizeSpinBox_ = new QSpinBox(subtitleStyleGroup);
-    subtitleFontSizeSpinBox_->setRange(8, 144);
-    subtitleFontSizeSpinBox_->setSuffix(QStringLiteral(" px"));
-    setHoverExplanation(subtitleFontSizeSpinBox_, uiText("Adjust subtitle font size in pixels and preview the result instantly."));
-    subtitleStyleLayout->addRow(uiText("Font size"), subtitleFontSizeSpinBox_);
+    subtitleScaleSpinBox_ = new QDoubleSpinBox(subtitleStyleGroup);
+    subtitleScaleSpinBox_->setRange(0.25, 5.0);
+    subtitleScaleSpinBox_->setDecimals(2);
+    subtitleScaleSpinBox_->setSingleStep(0.05);
+    subtitleScaleSpinBox_->setSuffix(QStringLiteral("x"));
+    subtitleStyleLayout->addRow(uiText("Scale"), subtitleScaleSpinBox_);
 
     subtitleFontWeightSpinBox_ = new QSpinBox(subtitleStyleGroup);
     subtitleFontWeightSpinBox_->setRange(300, 900);
@@ -1806,29 +1802,11 @@ void SettingsDialog::buildUi()
     subtitleItalicCheckBox_ = new QCheckBox(uiText("Italic"), subtitleStyleGroup);
     subtitleStyleLayout->addRow(subtitleItalicCheckBox_);
 
-    subtitleFontProviderComboBox_ = new QComboBox(subtitleStyleGroup);
-    for (const auto &option : revaplayer::application::subtitleFontProviderOptions()) {
-        subtitleFontProviderComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    subtitleBorderStyleComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleBorderStyleOptions()) {
+        subtitleBorderStyleComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
     }
-    subtitleStyleLayout->addRow(uiText("Font provider"), subtitleFontProviderComboBox_);
-
-    subtitleShaperComboBox_ = new QComboBox(subtitleStyleGroup);
-    for (const auto &option : revaplayer::application::subtitleShaperOptions()) {
-        subtitleShaperComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleStyleLayout->addRow(uiText("Text shaping"), subtitleShaperComboBox_);
-
-    subtitleHintingComboBox_ = new QComboBox(subtitleStyleGroup);
-    for (const auto &option : revaplayer::application::subtitleHintingOptions()) {
-        subtitleHintingComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleStyleLayout->addRow(uiText("Font hinting"), subtitleHintingComboBox_);
-
-    subtitleTextColorButton_ = new QPushButton(subtitleStyleGroup);
-    subtitleStyleLayout->addRow(uiText("Text color"), subtitleTextColorButton_);
-
-    subtitleOutlineColorButton_ = new QPushButton(subtitleStyleGroup);
-    subtitleStyleLayout->addRow(uiText("Outline color"), subtitleOutlineColorButton_);
+    subtitleStyleLayout->addRow(uiText("Border style"), subtitleBorderStyleComboBox_);
 
     subtitleOutlineSizeSpinBox_ = new QDoubleSpinBox(subtitleStyleGroup);
     subtitleOutlineSizeSpinBox_->setRange(0.0, 12.0);
@@ -1836,12 +1814,6 @@ void SettingsDialog::buildUi()
     subtitleOutlineSizeSpinBox_->setSingleStep(0.10);
     subtitleOutlineSizeSpinBox_->setSuffix(QStringLiteral(" px"));
     subtitleStyleLayout->addRow(uiText("Outline thickness"), subtitleOutlineSizeSpinBox_);
-
-    subtitleBorderStyleComboBox_ = new QComboBox(subtitleStyleGroup);
-    for (const auto &option : revaplayer::application::subtitleBorderStyleOptions()) {
-        subtitleBorderStyleComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
-    }
-    subtitleStyleLayout->addRow(uiText("Border style"), subtitleBorderStyleComboBox_);
 
     subtitleShadowEnabledCheckBox_ = new QCheckBox(uiText("Enable shadow"), subtitleStyleGroup);
     subtitleStyleLayout->addRow(subtitleShadowEnabledCheckBox_);
@@ -1862,12 +1834,6 @@ void SettingsDialog::buildUi()
     subtitleShadowBlurSpinBox_->setSingleStep(0.05);
     subtitleStyleLayout->addRow(uiText("Shadow blur"), subtitleShadowBlurSpinBox_);
 
-    subtitleBackgroundEnabledCheckBox_ = new QCheckBox(uiText("Enable background box"), subtitleStyleGroup);
-    subtitleStyleLayout->addRow(subtitleBackgroundEnabledCheckBox_);
-
-    subtitleBackgroundColorButton_ = new QPushButton(subtitleStyleGroup);
-    subtitleStyleLayout->addRow(uiText("Background color"), subtitleBackgroundColorButton_);
-
     subtitleBackgroundOpacitySpinBox_ = new QSpinBox(subtitleStyleGroup);
     subtitleBackgroundOpacitySpinBox_->setRange(0, 100);
     subtitleBackgroundOpacitySpinBox_->setSuffix(QStringLiteral("%"));
@@ -1885,6 +1851,44 @@ void SettingsDialog::buildUi()
     subtitleLetterSpacingSpinBox_->setSingleStep(0.10);
     subtitleStyleLayout->addRow(uiText("Letter spacing"), subtitleLetterSpacingSpinBox_);
 
+    subtitleMaxWidthSpinBox_ = new QDoubleSpinBox(subtitleStyleGroup);
+    subtitleMaxWidthSpinBox_->setRange(30.0, 100.0);
+    subtitleMaxWidthSpinBox_->setDecimals(1);
+    subtitleMaxWidthSpinBox_->setSingleStep(2.0);
+    subtitleMaxWidthSpinBox_->setSuffix(QStringLiteral("%"));
+    subtitleStyleLayout->addRow(uiText("Max subtitle width"), subtitleMaxWidthSpinBox_);
+
+    subtitleAlignYComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleAlignYOptions()) {
+        subtitleAlignYComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Frame alignment"), subtitleAlignYComboBox_);
+
+    subtitleAlignXComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleAlignXOptions()) {
+        subtitleAlignXComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Horizontal anchor"), subtitleAlignXComboBox_);
+
+    subtitleJustifyComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleJustifyOptions()) {
+        subtitleJustifyComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Text alignment"), subtitleJustifyComboBox_);
+
+    subtitleUseMarginsCheckBox_ = new QCheckBox(uiText("Keep subtitles inside the renderer margins"), subtitleStyleGroup);
+    subtitleStyleLayout->addRow(subtitleUseMarginsCheckBox_);
+
+    subtitleMarginXSpinBox_ = new QSpinBox(subtitleStyleGroup);
+    subtitleMarginXSpinBox_->setRange(0, 300);
+    subtitleMarginXSpinBox_->setSuffix(QStringLiteral(" px"));
+    subtitleStyleLayout->addRow(uiText("Safe area horizontal margin"), subtitleMarginXSpinBox_);
+
+    subtitleMarginYSpinBox_ = new QSpinBox(subtitleStyleGroup);
+    subtitleMarginYSpinBox_->setRange(0, 600);
+    subtitleMarginYSpinBox_->setSuffix(QStringLiteral(" px"));
+    subtitleStyleLayout->addRow(uiText("Safe area bottom / edge margin"), subtitleMarginYSpinBox_);
+
     subtitleScaleWithWindowCheckBox_ = new QCheckBox(uiText("Scale subtitles with the player window"), subtitleStyleGroup);
     subtitleStyleLayout->addRow(subtitleScaleWithWindowCheckBox_);
 
@@ -1894,128 +1898,77 @@ void SettingsDialog::buildUi()
     subtitleAssJustifyCheckBox_ = new QCheckBox(uiText("Use ASS-aware justification when possible"), subtitleStyleGroup);
     subtitleStyleLayout->addRow(subtitleAssJustifyCheckBox_);
 
+    subtitleFontProviderComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleFontProviderOptions()) {
+        subtitleFontProviderComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Font provider"), subtitleFontProviderComboBox_);
+
+    subtitleShaperComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleShaperOptions()) {
+        subtitleShaperComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Text shaping"), subtitleShaperComboBox_);
+
+    subtitleHintingComboBox_ = new QComboBox(subtitleStyleGroup);
+    for (const auto &option : revaplayer::application::subtitleHintingOptions()) {
+        subtitleHintingComboBox_->addItem(revaplayer::application::translateUiText(option.label), option.id);
+    }
+    subtitleStyleLayout->addRow(uiText("Font hinting"), subtitleHintingComboBox_);
+
     resetSubtitleAppearanceButton_ = new QPushButton(uiText("Reset Subtitle Appearance to Defaults"), subtitleStyleGroup);
-    subtitleStyleLayout->addRow(QString(), resetSubtitleAppearanceButton_);
+    resetSubtitleAppearanceButton_->setVisible(false);
 
-    this->subtitlePreviewGroup_ = new QGroupBox(uiText("Live Preview"), subtitleSectionPage);
-    this->subtitlePreviewGroup_->setObjectName(QStringLiteral("subtitlePreviewGroup"));
-    auto *subtitlePreviewLayout = new QVBoxLayout(this->subtitlePreviewGroup_);
-    subtitlePreviewLayout->setContentsMargins(12, 12, 12, 12);
-    subtitlePreviewLayout->setSpacing(8);
+    subtitleAdvancedContainerLayout->addWidget(subtitleAutomationGroup);
+    subtitleAdvancedContainerLayout->addWidget(subtitleStyleGroup);
 
-    auto *subtitlePreviewFrame = new QFrame(this->subtitlePreviewGroup_);
-    subtitlePreviewFrame->setObjectName(QStringLiteral("subtitlePreviewSurface"));
-    subtitlePreviewFrame->setFrameShape(QFrame::StyledPanel);
-    subtitlePreviewFrame->setMinimumHeight(180);
-    subtitlePreviewFrame->setStyleSheet(QStringLiteral(
-        "QFrame#subtitlePreviewSurface {"
-        " background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #111724, stop:1 #05070c);"
-        " border: 1px solid rgba(255,255,255,0.10);"
-        " border-radius: 14px;"
-        "}"));
-    auto *subtitlePreviewFrameLayout = new QVBoxLayout(subtitlePreviewFrame);
-    subtitlePreviewFrameLayout->setContentsMargins(18, 18, 18, 18);
-    subtitlePreviewFrameLayout->setSpacing(6);
+    auto *subtitleTabs = new QTabWidget(subtitleSectionPage);
+    auto *subtitleBasicTab = new QWidget(subtitleTabs);
+    auto *subtitleBasicLayout = new QVBoxLayout(subtitleBasicTab);
+    subtitleBasicLayout->setContentsMargins(0, 0, 0, 0);
+    subtitleBasicLayout->setSpacing(10);
+    subtitleBasicLayout->addWidget(subtitleBehaviorGroup);
 
-    auto *subtitlePreviewHintLabel = new QLabel(
-        uiText("The sample below updates live. If a video is already open, playback subtitles update too while this window stays open."),
-        subtitlePreviewFrame);
-    subtitlePreviewHintLabel->setWordWrap(true);
-    subtitlePreviewHintLabel->setStyleSheet(QStringLiteral("color: rgba(235,241,255,0.82);"));
+    auto *subtitleAdvancedTab = new QWidget(subtitleTabs);
+    auto *subtitleAdvancedTabLayout = new QVBoxLayout(subtitleAdvancedTab);
+    subtitleAdvancedTabLayout->setContentsMargins(0, 0, 0, 0);
+    subtitleAdvancedTabLayout->setSpacing(10);
+    subtitleAdvancedTabLayout->addWidget(subtitleAdvancedContainer);
 
-    subtitlePreviewSampleLabel_ = new QLabel(uiText("Preview subtitle • مثال حي للترجمة"), subtitlePreviewFrame);
-    subtitlePreviewSampleLabel_->setObjectName(QStringLiteral("subtitlePreviewSampleLabel"));
-    subtitlePreviewSampleLabel_->setWordWrap(true);
-    subtitlePreviewSampleLabel_->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
-    subtitlePreviewSampleLabel_->setMinimumHeight(96);
-    subtitlePreviewSampleLabel_->setStyleSheet(QStringLiteral(
-        "color: #f7fbff;"
-        " background: rgba(3, 5, 10, 0.42);"
-        " border-radius: 12px;"
-        " padding: 12px 16px;"));
+    subtitleTabs->addTab(subtitleBasicTab, uiText("Basic"));
+    subtitleTabs->addTab(subtitleAdvancedTab, uiText("Advanced"));
+    subtitleTabs->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    const auto syncSubtitleTabsHeight = [subtitleTabs]() {
+        if (subtitleTabs == nullptr || subtitleTabs->currentWidget() == nullptr || subtitleTabs->tabBar() == nullptr) {
+            return;
+        }
+        const int contentHeight = subtitleTabs->currentWidget()->sizeHint().height();
+        const int tabBarHeight = subtitleTabs->tabBar()->sizeHint().height();
+        subtitleTabs->setFixedHeight(std::max(120, contentHeight + tabBarHeight + 20));
+    };
+    connect(subtitleTabs, &QTabWidget::currentChanged, subtitleTabs, [syncSubtitleTabsHeight](const int) {
+        syncSubtitleTabsHeight();
+    });
+    syncSubtitleTabsHeight();
 
-    subtitlePreviewModeLabel_ = new QLabel(subtitlePreviewFrame);
-    subtitlePreviewModeLabel_->setWordWrap(true);
-    subtitlePreviewModeLabel_->setStyleSheet(QStringLiteral("color: rgba(214,223,241,0.86);"));
-
-    subtitlePreviewFrameLayout->addWidget(subtitlePreviewHintLabel, 0);
-    subtitlePreviewFrameLayout->addStretch(1);
-    subtitlePreviewFrameLayout->addWidget(subtitlePreviewSampleLabel_, 0);
-    subtitlePreviewFrameLayout->addWidget(subtitlePreviewModeLabel_, 0);
-
-    subtitlePreviewLayout->addWidget(subtitlePreviewFrame, 1);
-
-    auto *subtitleNote = new QLabel(
-        uiText("Style override controls how much of the embedded ASS styling is preserved. \"Scale\" is usually the safest default when you want readable subtitles without discarding all authored positioning."),
-        subtitleSectionPage);
-    subtitleNote->setWordWrap(true);
-
-    subtitleLayout->addWidget(subtitleBehaviorGroup);
-    subtitleLayout->addWidget(subtitleAutomationGroup);
-    subtitleLayout->addWidget(subtitleStyleGroup);
-    subtitleLayout->addWidget(this->subtitlePreviewGroup_);
-    subtitleLayout->addWidget(subtitleNote);
+    subtitleLayout->addWidget(subtitleTabs);
     subtitleLayout->addStretch(1);
 
-    const auto connectSubtitlePreviewControl = [this](auto *widget, auto signal) {
-        connect(widget, signal, this, [this](auto) {
-            refreshSubtitlePreviewSample();
-            emitSubtitlePreviewState();
-        });
-    };
-    connectSubtitlePreviewControl(subtitleVisibleCheckBox_, &QCheckBox::toggled);
-    connectSubtitlePreviewControl(subtitleScaleSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewControl(subtitlePositionSpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-    connectSubtitlePreviewControl(subtitleFontSizeSpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-    connectSubtitlePreviewControl(subtitleAssOverrideComboBox_, qOverload<int>(&QComboBox::currentIndexChanged));
-    connect(subtitleFontComboBox_, &QFontComboBox::currentFontChanged, this, [this](const QFont &) {
-        refreshSubtitlePreviewSample();
-        emitSubtitlePreviewState();
-    });
-    const auto connectSubtitlePreviewRefresh = [this](auto *object, auto signal) {
-        connect(object, signal, this, [this](auto...) {
-            refreshSubtitlePreviewSample();
-        });
-    };
     const auto syncSubtitleAutoLoadControls = [this]() {
         if (subtitleAutoLoadLocalMatchesCheckBox_ == nullptr || subtitleAutoLoadModeComboBox_ == nullptr) {
             return;
         }
 
-        const bool enabled = subtitleAutoLoadModeComboBox_->currentData().toString() != QStringLiteral("disabled");
+        const QString modeId = subtitleAutoLoadModeComboBox_->currentData().toString().trimmed();
+        const bool enabled = modeId != QStringLiteral("manual_only");
         {
             const QSignalBlocker blocker(subtitleAutoLoadLocalMatchesCheckBox_);
             subtitleAutoLoadLocalMatchesCheckBox_->setChecked(enabled);
-        }
-        if (subtitleAutoExtensionsEdit_ != nullptr) {
-            subtitleAutoExtensionsEdit_->setEnabled(enabled);
         }
         if (subtitleRememberTrackChoiceCheckBox_ != nullptr) {
             subtitleRememberTrackChoiceCheckBox_->setEnabled(enabled);
         }
     };
-    connectSubtitlePreviewRefresh(subtitleFontWeightSpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleItalicCheckBox_, &QCheckBox::toggled);
-    connectSubtitlePreviewRefresh(subtitleTextColorButton_, &QPushButton::clicked);
-    connectSubtitlePreviewRefresh(subtitleOutlineColorButton_, &QPushButton::clicked);
-    connectSubtitlePreviewRefresh(subtitleOutlineSizeSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleBorderStyleComboBox_, qOverload<int>(&QComboBox::currentIndexChanged));
-    connectSubtitlePreviewRefresh(subtitleShadowEnabledCheckBox_, &QCheckBox::toggled);
-    connectSubtitlePreviewRefresh(subtitleShadowColorButton_, &QPushButton::clicked);
-    connectSubtitlePreviewRefresh(subtitleShadowOffsetSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleShadowBlurSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleBackgroundEnabledCheckBox_, &QCheckBox::toggled);
-    connectSubtitlePreviewRefresh(subtitleBackgroundColorButton_, &QPushButton::clicked);
-    connectSubtitlePreviewRefresh(subtitleBackgroundOpacitySpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleLineSpacingSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleLetterSpacingSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleMaxWidthSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleAlignXComboBox_, qOverload<int>(&QComboBox::currentIndexChanged));
-    connectSubtitlePreviewRefresh(subtitleAlignYComboBox_, qOverload<int>(&QComboBox::currentIndexChanged));
-    connectSubtitlePreviewRefresh(subtitleJustifyComboBox_, qOverload<int>(&QComboBox::currentIndexChanged));
-    connectSubtitlePreviewRefresh(subtitleMarginXSpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-    connectSubtitlePreviewRefresh(subtitleMarginYSpinBox_, qOverload<int>(&QSpinBox::valueChanged));
-
     const auto attachColorPicker = [this](QPushButton *button, const QString &title, const QString &fallback) {
         updateSubtitleColorButton(button, QColor(fallback));
         connect(button, &QPushButton::clicked, this, [this, button, title, fallback]() {
@@ -2029,6 +1982,7 @@ void SettingsDialog::buildUi()
             }
             updateSubtitleColorButton(button, chosen);
             refreshSubtitlePreviewSample();
+            emitSubtitlePreviewState();
         });
     };
     attachColorPicker(subtitleTextColorButton_, uiText("Subtitle Text Color"), QStringLiteral("#FFFFFFFF"));
@@ -2039,7 +1993,7 @@ void SettingsDialog::buildUi()
         if (subtitleAutoLoadModeComboBox_ == nullptr) {
             return;
         }
-        const QString targetMode = checked ? QStringLiteral("same_name") : QStringLiteral("disabled");
+        const QString targetMode = checked ? QStringLiteral("same_name_only") : QStringLiteral("manual_only");
         if (subtitleAutoLoadModeComboBox_->currentData().toString() != targetMode) {
             const int targetIndex = subtitleAutoLoadModeComboBox_->findData(targetMode);
             if (targetIndex >= 0) {
@@ -2051,20 +2005,34 @@ void SettingsDialog::buildUi()
     connect(subtitleAutoLoadModeComboBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [syncSubtitleAutoLoadControls](const int) {
         syncSubtitleAutoLoadControls();
     });
+    const auto refreshSubtitlePreview = [this]() {
+        refreshSubtitlePreviewSample();
+        emitSubtitlePreviewState();
+    };
+    connect(subtitleVisibleCheckBox_, &QCheckBox::toggled, this, [refreshSubtitlePreview](const bool) { refreshSubtitlePreview(); });
+    connect(subtitleScaleSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitlePositionSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleFontComboBox_, &QFontComboBox::currentFontChanged, this, [refreshSubtitlePreview](const QFont &) { refreshSubtitlePreview(); });
+    connect(subtitleFontSizeSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleFontWeightSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleItalicCheckBox_, &QCheckBox::toggled, this, [refreshSubtitlePreview](const bool) { refreshSubtitlePreview(); });
+    connect(subtitleAssOverrideComboBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleAlignXComboBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleAlignYComboBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleJustifyComboBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleOutlineSizeSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitleBackgroundOpacitySpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleShadowOffsetSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitleShadowBlurSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitleLineSpacingSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitleLetterSpacingSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [refreshSubtitlePreview](double) { refreshSubtitlePreview(); });
+    connect(subtitleMarginXSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleMarginYSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [refreshSubtitlePreview](int) { refreshSubtitlePreview(); });
+    connect(subtitleBackgroundEnabledCheckBox_, &QCheckBox::toggled, this, [refreshSubtitlePreview](const bool) { refreshSubtitlePreview(); });
+    connect(subtitleShadowEnabledCheckBox_, &QCheckBox::toggled, this, [refreshSubtitlePreview](const bool) { refreshSubtitlePreview(); });
+    connect(subtitleUseMarginsCheckBox_, &QCheckBox::toggled, this, [refreshSubtitlePreview](const bool) { refreshSubtitlePreview(); });
 
-    connect(resetVideoZoomSettingsButton_, &QPushButton::clicked, this, [this]() {
-        videoZoomStepSpinBox_->setValue(0.20);
-        videoMinimumZoomSpinBox_->setValue(1.00);
-        videoMaximumZoomSpinBox_->setValue(6.00);
-        videoZoomDefaultBehaviorComboBox_->setCurrentIndex(std::max(0, videoZoomDefaultBehaviorComboBox_->findData(QStringLiteral("fit_to_frame"))));
-        videoZoomResetOnFileChangeCheckBox_->setChecked(true);
-        videoZoomRememberModeComboBox_->setCurrentIndex(std::max(0, videoZoomRememberModeComboBox_->findData(QStringLiteral("off"))));
-        videoPanSensitivitySpinBox_->setValue(1.00);
-        videoZoomConstrainPanningCheckBox_->setChecked(true);
-        videoZoomWheelBehaviorComboBox_->setCurrentIndex(std::max(0, videoZoomWheelBehaviorComboBox_->findData(QStringLiteral("global"))));
-        videoZoomFullscreenBehaviorComboBox_->setCurrentIndex(std::max(0, videoZoomFullscreenBehaviorComboBox_->findData(QStringLiteral("keep"))));
-    });
-    connect(resetSubtitleAppearanceButton_, &QPushButton::clicked, this, [this]() {
+    const auto resetSubtitleAppearanceToDefaults = [this]() {
         subtitleFontComboBox_->setCurrentFont(QFont(QStringLiteral("sans-serif")));
         subtitleFontSizeSpinBox_->setValue(38);
         subtitleFontWeightSpinBox_->setValue(500);
@@ -2099,6 +2067,13 @@ void SettingsDialog::buildUi()
         updateSubtitleColorButton(subtitleBackgroundColorButton_, QColor(QStringLiteral("#AF000000")));
         updateSubtitleColorButton(subtitleShadowColorButton_, QColor(QStringLiteral("#AF000000")));
         refreshSubtitlePreviewSample();
+        emitSubtitlePreviewState();
+    };
+    connect(resetSubtitleAppearanceButton_, &QPushButton::clicked, this, [resetSubtitleAppearanceToDefaults]() {
+        resetSubtitleAppearanceToDefaults();
+    });
+    connect(resetSubtitleStyleQuickButton_, &QPushButton::clicked, this, [resetSubtitleAppearanceToDefaults]() {
+        resetSubtitleAppearanceToDefaults();
     });
     connect(videoMinimumZoomSpinBox_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](const double value) {
         if (videoMaximumZoomSpinBox_ != nullptr && videoMaximumZoomSpinBox_->value() < value) {
@@ -2117,7 +2092,6 @@ void SettingsDialog::buildUi()
         if (subtitleBackgroundOpacitySpinBox_ != nullptr) {
             subtitleBackgroundOpacitySpinBox_->setEnabled(enabled);
         }
-        refreshSubtitlePreviewSample();
     });
     connect(subtitleShadowEnabledCheckBox_, &QCheckBox::toggled, this, [this](const bool enabled) {
         if (subtitleShadowColorButton_ != nullptr) {
@@ -2129,7 +2103,6 @@ void SettingsDialog::buildUi()
         if (subtitleShadowBlurSpinBox_ != nullptr) {
             subtitleShadowBlurSpinBox_->setEnabled(enabled);
         }
-        refreshSubtitlePreviewSample();
     });
     connect(subtitleUseMarginsCheckBox_, &QCheckBox::toggled, this, [this](const bool enabled) {
         if (subtitleMarginXSpinBox_ != nullptr) {
@@ -2138,142 +2111,8 @@ void SettingsDialog::buildUi()
         if (subtitleMarginYSpinBox_ != nullptr) {
             subtitleMarginYSpinBox_->setEnabled(enabled);
         }
-        refreshSubtitlePreviewSample();
     });
     syncSubtitleAutoLoadControls();
-
-    auto *commandsPage = new QWidget();
-    auto *commandsLayout = new QVBoxLayout(commandsPage);
-    commandsLayout->setContentsMargins(18, 18, 18, 18);
-    commandsLayout->setSpacing(14);
-
-    auto *commandsInfoLabel = new QLabel(
-        uiText("Custom commands and presets run mpv commands only. Use one command per line and separate arguments with |. Example:\nset|speed|1.25\nshow-text|My Preset"),
-        commandsPage);
-    commandsInfoLabel->setWordWrap(true);
-
-    auto *presetTemplatesGroup = new QGroupBox(uiText("Preset Starters"), commandsPage);
-    auto *presetTemplatesLayout = new QGridLayout(presetTemplatesGroup);
-    presetTemplatesLayout->setHorizontalSpacing(8);
-    presetTemplatesLayout->setVerticalSpacing(8);
-
-    auto *playbackPresetButton = new QPushButton(uiText("Playback Preset"), presetTemplatesGroup);
-    auto *subtitlePresetButton = new QPushButton(uiText("Subtitle Preset"), presetTemplatesGroup);
-    auto *audioPresetButton = new QPushButton(uiText("Audio Preset"), presetTemplatesGroup);
-
-    presetTemplatesLayout->addWidget(playbackPresetButton, 0, 0);
-    presetTemplatesLayout->addWidget(subtitlePresetButton, 0, 1);
-    presetTemplatesLayout->addWidget(audioPresetButton, 1, 0);
-
-    auto *commandsContent = new QWidget(commandsPage);
-    auto *commandsContentLayout = new QHBoxLayout(commandsContent);
-    commandsContentLayout->setContentsMargins(0, 0, 0, 0);
-    commandsContentLayout->setSpacing(12);
-
-    auto *commandsListColumn = new QWidget(commandsContent);
-    auto *commandsListLayout = new QVBoxLayout(commandsListColumn);
-    commandsListLayout->setContentsMargins(0, 0, 0, 0);
-    commandsListLayout->setSpacing(8);
-    customCommandsList_ = new QListWidget(commandsListColumn);
-    addCustomCommandButton_ = new QPushButton(uiText("Add"), commandsListColumn);
-    duplicateCustomCommandButton_ = new QPushButton(uiText("Duplicate"), commandsListColumn);
-    removeCustomCommandButton_ = new QPushButton(uiText("Remove"), commandsListColumn);
-    auto *commandsButtonRow = new QWidget(commandsListColumn);
-    auto *commandsButtonLayout = new QHBoxLayout(commandsButtonRow);
-    commandsButtonLayout->setContentsMargins(0, 0, 0, 0);
-    commandsButtonLayout->setSpacing(8);
-    commandsButtonLayout->addWidget(addCustomCommandButton_);
-    commandsButtonLayout->addWidget(duplicateCustomCommandButton_);
-    commandsButtonLayout->addWidget(removeCustomCommandButton_);
-    commandsListLayout->addWidget(customCommandsList_, 1);
-    commandsListLayout->addWidget(commandsButtonRow);
-
-    auto *commandsEditorGroup = new QGroupBox(uiText("Selected Preset / Command"), commandsContent);
-    auto *commandsEditorLayout = new QFormLayout(commandsEditorGroup);
-    customCommandNameEdit_ = new QLineEdit(commandsEditorGroup);
-    customCommandScriptEdit_ = new QPlainTextEdit(commandsEditorGroup);
-    customCommandScriptEdit_->setPlaceholderText(QStringLiteral("seek|5|relative+exact\nshow-text|Skip Intro"));
-    customCommandScriptEdit_->setMinimumHeight(180);
-    commandsEditorLayout->addRow(uiText("Name"), customCommandNameEdit_);
-    commandsEditorLayout->addRow(uiText("mpv commands"), customCommandScriptEdit_);
-
-    commandsContentLayout->addWidget(commandsListColumn, 1);
-    commandsContentLayout->addWidget(commandsEditorGroup, 2);
-
-    const auto appendPresetCommand = [this](const QString &name, const QString &script) {
-        commitCustomCommandEditor();
-        customCommands_.push_back(revaplayer::domain::CustomCommand {
-            .id = -1,
-            .name = name,
-            .script = script,
-        });
-        refreshCustomCommandsList();
-        loadCustomCommandIntoEditor(customCommands_.size() - 1);
-    };
-
-    connect(addCustomCommandButton_, &QPushButton::clicked, this, [this]() {
-        commitCustomCommandEditor();
-        customCommands_.push_back(revaplayer::domain::CustomCommand {
-            .id = -1,
-            .name = uiText("Custom Command %1").arg(customCommands_.size() + 1),
-            .script = QString {},
-        });
-        refreshCustomCommandsList();
-        loadCustomCommandIntoEditor(customCommands_.size() - 1);
-    });
-
-    connect(duplicateCustomCommandButton_, &QPushButton::clicked, this, [this]() {
-        if (currentCustomCommandIndex_ < 0 || currentCustomCommandIndex_ >= customCommands_.size()) {
-            return;
-        }
-
-        commitCustomCommandEditor();
-        auto duplicate = customCommands_.at(currentCustomCommandIndex_);
-        duplicate.id = -1;
-        const QString baseName = duplicate.name.trimmed().isEmpty()
-            ? uiText("Custom Command %1").arg(currentCustomCommandIndex_ + 1)
-            : duplicate.name.trimmed();
-        duplicate.name = QStringLiteral("%1 Copy").arg(baseName);
-        customCommands_.insert(currentCustomCommandIndex_ + 1, duplicate);
-        refreshCustomCommandsList();
-        loadCustomCommandIntoEditor(currentCustomCommandIndex_ + 1);
-    });
-
-    connect(removeCustomCommandButton_, &QPushButton::clicked, this, [this]() {
-        if (currentCustomCommandIndex_ < 0 || currentCustomCommandIndex_ >= customCommands_.size()) {
-            return;
-        }
-
-        customCommands_.removeAt(currentCustomCommandIndex_);
-        refreshCustomCommandsList();
-        const int nextIndex = customCommands_.isEmpty()
-            ? -1
-            : std::min(currentCustomCommandIndex_, static_cast<int>(customCommands_.size() - 1));
-        loadCustomCommandIntoEditor(nextIndex);
-    });
-
-    connect(customCommandsList_, &QListWidget::currentRowChanged, this, [this](const int row) {
-        loadCustomCommandIntoEditor(row);
-    });
-    connect(playbackPresetButton, &QPushButton::clicked, this, [this, appendPresetCommand]() {
-        appendPresetCommand(
-            uiText("Playback Preset %1").arg(customCommands_.size() + 1),
-            QStringLiteral("set|speed|1.00\nshow-text|Playback preset"));
-    });
-    connect(subtitlePresetButton, &QPushButton::clicked, this, [this, appendPresetCommand]() {
-        appendPresetCommand(
-            uiText("Subtitle Preset %1").arg(customCommands_.size() + 1),
-            QStringLiteral("set|sub-scale|1.00\nset|sub-pos|100\nshow-text|Subtitle preset"));
-    });
-    connect(audioPresetButton, &QPushButton::clicked, this, [this, appendPresetCommand]() {
-        appendPresetCommand(
-            uiText("Audio Preset %1").arg(customCommands_.size() + 1),
-            QStringLiteral("set|audio-delay|0\nshow-text|Audio preset"));
-    });
-
-    commandsLayout->addWidget(commandsInfoLabel);
-    commandsLayout->addWidget(presetTemplatesGroup, 0);
-    commandsLayout->addWidget(commandsContent, 1);
 
     auto *shortcutsPage = new QWidget();
     auto *shortcutsPageLayout = new QVBoxLayout(shortcutsPage);
@@ -2382,7 +2221,7 @@ void SettingsDialog::buildUi()
             this,
             uiText("Export Shortcut Profile"),
             QStringLiteral("shortcuts-profile.json"),
-            QStringLiteral("JSON Files (*.json)"));
+            uiText("JSON Files (*.json)"));
         if (path.trimmed().isEmpty()) {
             return;
         }
@@ -2410,7 +2249,7 @@ void SettingsDialog::buildUi()
             this,
             uiText("Import Shortcut Profile"),
             QStringLiteral("shortcuts-profile.json"),
-            QStringLiteral("JSON Files (*.json)"));
+            uiText("JSON Files (*.json)"));
         if (path.trimmed().isEmpty()) {
             return;
         }
@@ -2458,13 +2297,13 @@ void SettingsDialog::buildUi()
     };
 
     QWidget *startupSectionPage = createSectionPage({sessionGroup});
-    QWidget *interfaceSectionPage = createSectionPage({windowChromeGroup, interfaceGroup, appearanceGroup, themeEditorGroup, motionGroup, dashboardGroup, storageInfoLabel_});
+    QWidget *interfaceSectionPage = createSectionPage({windowChromeGroup, interfaceGroup, appearanceGroup, themeEditorGroup, dashboardGroup, storageInfoLabel_});
     QWidget *playbackSectionPage = createSectionPage({volumeGroup, interactionGroup, videoZoomGroup, feedbackGroup, playbackNote});
-    QWidget *controlBarSectionPage = createSectionPage({controlBarAppearanceGroup, controlBarVisibilityGroup});
+    QWidget *controlBarSectionPage = createSectionPage({controlBarVisibilityGroup});
     QWidget *panelsSectionPage = createSectionPage({layoutGroup, fullscreenGroup, pointerGroup});
     QWidget *timelineSectionPage = createSectionPage({thumbnailsGroup, sceneBrowserGroup});
     QWidget *playlistSectionPage = createSectionPage({playlistGroup, progressGroup});
-    QWidget *mouseSectionPage = createSectionPage({mouseGroup, gesturesGroup, mouseZonesGroup});
+    QWidget *mouseSectionPage = createSectionPage({mouseGroup, mouseZonesGroup});
     QWidget *historySectionPage = createSectionPage({historyGroup});
     auto *maintenancePage = new QWidget();
     maintenancePage->setObjectName(QStringLiteral("settingsSectionPage"));
@@ -2479,13 +2318,19 @@ void SettingsDialog::buildUi()
         maintenanceGroup);
     maintenanceInfoLabel->setWordWrap(true);
 
-    clearCacheButton_ = new QPushButton(uiText("Clear Cache..."), maintenanceGroup);
+    clearCacheButton_ = new QPushButton(uiText("Clear Cache"), maintenanceGroup);
     auto *clearCacheHintLabel = new QLabel(
         uiText("Removes cached thumbnails and temporary data only. Preferences, history, bookmarks, and saved lists are kept."),
         maintenanceGroup);
     clearCacheHintLabel->setWordWrap(true);
 
-    factoryResetButton_ = new QPushButton(uiText("Factory Reset..."), maintenanceGroup);
+    resetSettingsButton_ = new QPushButton(uiText("Reset Settings"), maintenanceGroup);
+    auto *resetSettingsHintLabel = new QLabel(
+        uiText("Resets settings to defaults only and keeps history, playlists, bookmarks, resume state, and database data."),
+        maintenanceGroup);
+    resetSettingsHintLabel->setWordWrap(true);
+
+    factoryResetButton_ = new QPushButton(uiText("Factory Reset"), maintenanceGroup);
     auto *factoryResetHintLabel = new QLabel(
         uiText("Removes all local Reva Player data and restores defaults. This does not delete your actual media files."),
         maintenanceGroup);
@@ -2496,6 +2341,9 @@ void SettingsDialog::buildUi()
     maintenanceGroupLayout->addWidget(clearCacheButton_, 0);
     maintenanceGroupLayout->addWidget(clearCacheHintLabel);
     maintenanceGroupLayout->addSpacing(10);
+    maintenanceGroupLayout->addWidget(resetSettingsButton_, 0);
+    maintenanceGroupLayout->addWidget(resetSettingsHintLabel);
+    maintenanceGroupLayout->addSpacing(10);
     maintenanceGroupLayout->addWidget(factoryResetButton_, 0);
     maintenanceGroupLayout->addWidget(factoryResetHintLabel);
 
@@ -2504,6 +2352,29 @@ void SettingsDialog::buildUi()
 
     connect(clearCacheButton_, &QPushButton::clicked, this, [this]() {
         emit clearCacheRequested();
+    });
+    connect(resetSettingsButton_, &QPushButton::clicked, this, [this]() {
+        if (settingsController_ == nullptr) {
+            return;
+        }
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            this,
+            uiText("Reset Settings"),
+            uiText("Reset settings to defaults only?\nThis keeps history, playlists, bookmarks, resume state, and database data."),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            return;
+        }
+        if (!settingsController_->resetSettingsToDefaults()) {
+            QMessageBox::warning(
+                this,
+                uiText("Reset Settings"),
+                uiText("Failed to reset settings."));
+            return;
+        }
+        loadSettings();
+        emit settingsApplied();
     });
     connect(factoryResetButton_, &QPushButton::clicked, this, [this]() {
         emit factoryResetRequested();
@@ -2524,7 +2395,6 @@ void SettingsDialog::buildUi()
         historySectionPage,
         maintenancePage,
         captureSectionPage,
-        commandsPage,
         shortcutsPage,
     };
 
@@ -2559,7 +2429,6 @@ void SettingsDialog::buildUi()
     addSectionTab(wrapScrollablePage(historySectionPage), uiText("History"));
     addSectionTab(wrapScrollablePage(maintenancePage), uiText("Maintenance / Data Management"));
     addSectionTab(wrapScrollablePage(captureSectionPage), uiText("Capture"));
-    addSectionTab(commandsPage, uiText("Commands & Presets"));
     addSectionTab(shortcutsPage, uiText("Shortcuts"));
     subtitleTabIndex_ = tabs->indexOf(subtitleScrollArea);
 
@@ -2614,7 +2483,6 @@ void SettingsDialog::buildUi()
             }
         }
 
-        syncSubtitlePreviewVisibility();
     });
     if (!settingsSectionButtons_.isEmpty() && tabs->currentIndex() >= 0 && tabs->currentIndex() < settingsSectionButtons_.size()) {
         if (QPushButton *currentButton = settingsSectionButtons_.at(tabs->currentIndex()); currentButton != nullptr) {
@@ -2641,6 +2509,8 @@ void SettingsDialog::buildUi()
     }
     if (QPushButton *applyButton = buttonBox->button(QDialogButtonBox::Apply); applyButton != nullptr) {
         applyButton->setText(uiText("Apply"));
+        applyButton_ = applyButton;
+        applyButton_->setEnabled(false);
     }
     connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -2649,12 +2519,31 @@ void SettingsDialog::buildUi()
         if (!applyIfValid(&errorMessage)) {
             QMessageBox::warning(
                 this,
-                errorMessage.contains(QStringLiteral("shortcut"), Qt::CaseInsensitive)
-                    ? uiText("Invalid Shortcuts")
-                    : uiText("Invalid Custom Commands"),
+                uiText("Invalid Shortcuts"),
                 errorMessage);
         }
     });
+    const auto markDirty = [this]() {
+        settingsDirty_ = true;
+        if (applyButton_ != nullptr) {
+            applyButton_->setEnabled(true);
+        }
+    };
+    for (QCheckBox *checkBox : findChildren<QCheckBox *>()) {
+        connect(checkBox, &QCheckBox::toggled, this, [markDirty](bool) { markDirty(); });
+    }
+    for (QComboBox *comboBox : findChildren<QComboBox *>()) {
+        connect(comboBox, qOverload<int>(&QComboBox::currentIndexChanged), this, [markDirty](int) { markDirty(); });
+    }
+    for (QSpinBox *spinBox : findChildren<QSpinBox *>()) {
+        connect(spinBox, qOverload<int>(&QSpinBox::valueChanged), this, [markDirty](int) { markDirty(); });
+    }
+    for (QDoubleSpinBox *spinBox : findChildren<QDoubleSpinBox *>()) {
+        connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [markDirty](double) { markDirty(); });
+    }
+    for (QLineEdit *lineEdit : findChildren<QLineEdit *>()) {
+        connect(lineEdit, &QLineEdit::textChanged, this, [markDirty](const QString &) { markDirty(); });
+    }
 
     auto *searchRow = new QWidget(this);
     searchRow->setObjectName(QStringLiteral("settingsSearchRow"));
@@ -2691,114 +2580,24 @@ void SettingsDialog::buildUi()
     rootLayout->addWidget(tabs);
     rootLayout->addWidget(buttonBox);
 
-    syncSubtitlePreviewVisibility();
+    for (QComboBox *comboBox : findChildren<QComboBox *>()) {
+        comboBox->setFocusPolicy(Qt::StrongFocus);
+        comboBox->installEventFilter(this);
+    }
+    for (QFontComboBox *fontComboBox : findChildren<QFontComboBox *>()) {
+        fontComboBox->setFocusPolicy(Qt::StrongFocus);
+        fontComboBox->installEventFilter(this);
+    }
+    for (QAbstractSpinBox *spinBox : findChildren<QAbstractSpinBox *>()) {
+        spinBox->setFocusPolicy(Qt::StrongFocus);
+        spinBox->installEventFilter(this);
+    }
+
 }
 
 void SettingsDialog::refreshSubtitlePreviewSample()
 {
-    if (subtitlePreviewSampleLabel_ == nullptr
-        || subtitlePreviewModeLabel_ == nullptr
-        || subtitleFontComboBox_ == nullptr
-        || subtitleFontSizeSpinBox_ == nullptr
-        || subtitleScaleSpinBox_ == nullptr
-        || subtitlePositionSpinBox_ == nullptr
-        || subtitleVisibleCheckBox_ == nullptr
-        || subtitleAssOverrideComboBox_ == nullptr) {
-        return;
-    }
-
-    const bool visible = subtitleVisibleCheckBox_->isChecked();
-    const int baseFontSize = subtitleFontSizeSpinBox_->value();
-    const double scale = subtitleScaleSpinBox_->value();
-    const int position = subtitlePositionSpinBox_->value();
-    const int effectiveFontSize = std::clamp(
-        static_cast<int>(std::lround(baseFontSize * scale)),
-        8,
-        160);
-
-    QFont previewFont = subtitleFontComboBox_->currentFont();
-    previewFont.setPixelSize(effectiveFontSize);
-    previewFont.setWeight(static_cast<QFont::Weight>(
-        revaplayer::application::clampSubtitleFontWeight(
-            subtitleFontWeightSpinBox_ != nullptr ? subtitleFontWeightSpinBox_->value() : 500)));
-    previewFont.setItalic(subtitleItalicCheckBox_ != nullptr && subtitleItalicCheckBox_->isChecked());
-    subtitlePreviewSampleLabel_->setFont(previewFont);
-    subtitlePreviewSampleLabel_->setText(
-        visible
-            ? uiText("Preview subtitle • مثال حي للترجمة")
-            : uiText("Subtitles are currently hidden"));
-
-    const QColor textColor = resolvedSubtitleButtonColor(subtitleTextColorButton_, QStringLiteral("#FFFFFFFF"));
-    const QColor outlineColor = resolvedSubtitleButtonColor(subtitleOutlineColorButton_, QStringLiteral("#FF000000"));
-    const QColor backgroundBase = resolvedSubtitleButtonColor(subtitleBackgroundColorButton_, QStringLiteral("#AF000000"));
-    const bool backgroundEnabled = subtitleBackgroundEnabledCheckBox_ != nullptr && subtitleBackgroundEnabledCheckBox_->isChecked();
-    const bool shadowEnabled = subtitleShadowEnabledCheckBox_ != nullptr && subtitleShadowEnabledCheckBox_->isChecked();
-    const double outlineSize = revaplayer::application::clampSubtitleOutlineSize(
-        subtitleOutlineSizeSpinBox_ != nullptr ? subtitleOutlineSizeSpinBox_->value() : 1.65);
-    const double shadowOffset = revaplayer::application::clampSubtitleShadowOffset(
-        subtitleShadowOffsetSpinBox_ != nullptr ? subtitleShadowOffsetSpinBox_->value() : 0.0);
-    const double shadowBlur = revaplayer::application::clampSubtitleBlur(
-        subtitleShadowBlurSpinBox_ != nullptr ? subtitleShadowBlurSpinBox_->value() : 0.0);
-    const int backgroundOpacity = revaplayer::application::clampSubtitleBackgroundOpacity(
-        subtitleBackgroundOpacitySpinBox_ != nullptr ? subtitleBackgroundOpacitySpinBox_->value() : 68);
-    const QColor backgroundColor = backgroundEnabled
-        ? withAlphaPercent(backgroundBase, backgroundOpacity)
-        : QColor(QStringLiteral("#6B03050A"));
-    const QString alignX = subtitleAlignXComboBox_ != nullptr
-        ? revaplayer::application::normalizeSubtitleAlignX(subtitleAlignXComboBox_->currentData().toString())
-        : QStringLiteral("center");
-    const QString alignY = subtitleAlignYComboBox_ != nullptr
-        ? revaplayer::application::normalizeSubtitleAlignY(subtitleAlignYComboBox_->currentData().toString())
-        : QStringLiteral("bottom");
-    Qt::Alignment previewAlignment = Qt::AlignCenter;
-    if (alignX == QStringLiteral("left")) {
-        previewAlignment |= Qt::AlignLeft;
-    } else if (alignX == QStringLiteral("right")) {
-        previewAlignment |= Qt::AlignRight;
-    } else {
-        previewAlignment |= Qt::AlignHCenter;
-    }
-    if (alignY == QStringLiteral("top")) {
-        previewAlignment |= Qt::AlignTop;
-    } else if (alignY == QStringLiteral("center")) {
-        previewAlignment |= Qt::AlignVCenter;
-    } else {
-        previewAlignment |= Qt::AlignBottom;
-    }
-    const int marginX = revaplayer::application::clampSubtitleMarginX(
-        subtitleMarginXSpinBox_ != nullptr ? subtitleMarginXSpinBox_->value() : 19);
-    const int marginY = revaplayer::application::clampSubtitleMarginY(
-        subtitleMarginYSpinBox_ != nullptr ? subtitleMarginYSpinBox_->value() : 34);
-    const double normalizedPosition = std::clamp(position / 150.0, 0.0, 1.0);
-    const int topPadding = 10 + (marginY / 10)
-        + static_cast<int>(std::lround((alignY == QStringLiteral("top") ? normalizedPosition : (1.0 - normalizedPosition)) * 22.0));
-    const int bottomPadding = 10 + (marginY / 8)
-        + static_cast<int>(std::lround((alignY == QStringLiteral("bottom") ? normalizedPosition : (1.0 - normalizedPosition)) * 16.0));
-    subtitlePreviewSampleLabel_->setContentsMargins(18 + (marginX / 6), topPadding, 18 + (marginX / 6), bottomPadding);
-    subtitlePreviewSampleLabel_->setAlignment(visible ? previewAlignment : Qt::AlignCenter);
-    subtitlePreviewSampleLabel_->setStyleSheet(QStringLiteral(
-        "color: %1;"
-        " background: %2;"
-        " border: %3px solid %4;"
-        " border-radius: 12px;"
-        " padding: 12px 16px;")
-        .arg(visible ? textColor.name(QColor::HexArgb) : QStringLiteral("#b6c0d6"))
-        .arg(backgroundColor.name(QColor::HexArgb))
-        .arg(QString::number(std::max(1.0, outlineSize * 0.65), 'f', 1))
-        .arg(outlineColor.name(QColor::HexArgb)));
-
-    subtitlePreviewModeLabel_->setText(
-        visible
-            ? uiText("Mode %1 • Size %2 px • Scale %3x • Position %4% • %5 / %6 • Shadow %7 px • Blur %8")
-                  .arg(subtitleAssOverrideComboBox_->currentText())
-                  .arg(baseFontSize)
-                  .arg(QString::number(scale, 'f', 2))
-                  .arg(position)
-                  .arg(subtitleAlignXComboBox_ != nullptr ? subtitleAlignXComboBox_->currentText() : uiText("Center"))
-                  .arg(subtitleAlignYComboBox_ != nullptr ? subtitleAlignYComboBox_->currentText() : uiText("Bottom"))
-                  .arg(shadowEnabled ? QString::number(shadowOffset, 'f', 1) : QStringLiteral("0.0"))
-                  .arg(shadowEnabled ? QString::number(shadowBlur, 'f', 2) : QStringLiteral("0.00"))
-            : uiText("Enable subtitle visibility to preview the styled sample on video and inside this card."));
+    emitSubtitlePreviewState();
 }
 
 void SettingsDialog::emitSubtitlePreviewState()
@@ -2827,9 +2626,7 @@ void SettingsDialog::accept()
     if (!applyIfValid(&errorMessage)) {
         QMessageBox::warning(
             this,
-            errorMessage.contains(QStringLiteral("shortcut"), Qt::CaseInsensitive)
-                ? uiText("Invalid Shortcuts")
-                : uiText("Invalid Custom Commands"),
+            uiText("Invalid Shortcuts"),
             errorMessage);
         return;
     }
@@ -2847,14 +2644,11 @@ bool SettingsDialog::applyIfValid(QString *errorMessage)
         return false;
     }
 
-    if (!validateCustomCommands(&localError)) {
-        if (errorMessage != nullptr) {
-            *errorMessage = localError;
-        }
-        return false;
-    }
-
     applySettings();
+    settingsDirty_ = false;
+    if (applyButton_ != nullptr) {
+        applyButton_->setEnabled(false);
+    }
     emit settingsApplied();
     if (errorMessage != nullptr) {
         errorMessage->clear();
@@ -2878,9 +2672,11 @@ void SettingsDialog::loadSettings()
     const int accentIndex = themeAccentComboBox_->findData(
         settingsController_->customValue(QStringLiteral("ui/accent"), QStringLiteral("blue")));
     themeAccentComboBox_->setCurrentIndex(accentIndex >= 0 ? accentIndex : 0);
-    const int densityIndex = uiDensityComboBox_->findData(
-        settingsController_->customValue(QStringLiteral("ui/density"), QStringLiteral("normal")));
-    uiDensityComboBox_->setCurrentIndex(densityIndex >= 0 ? densityIndex : 0);
+    if (uiDensityComboBox_ != nullptr) {
+        const int densityIndex = uiDensityComboBox_->findData(
+            settingsController_->customValue(QStringLiteral("ui/density"), QStringLiteral("normal")));
+        uiDensityComboBox_->setCurrentIndex(densityIndex >= 0 ? densityIndex : 0);
+    }
     if (startupCanvasStyleComboBox_ != nullptr) {
         const int startupCanvasStyleIndex = startupCanvasStyleComboBox_->findData(
             normalizedStartupCanvasStyleId(
@@ -2891,8 +2687,6 @@ void SettingsDialog::loadSettings()
     }
     dashboardEnabledCheckBox_->setChecked(
         settingsController_->customValue(QStringLiteral("ui/dashboard_enabled"), QStringLiteral("1")) != QStringLiteral("0"));
-    dashboardShowOnIdleCheckBox_->setChecked(
-        settingsController_->customValue(QStringLiteral("ui/dashboard_show_on_idle"), QStringLiteral("1")) != QStringLiteral("0"));
     dashboardShowContinueCheckBox_->setChecked(
         settingsController_->customValue(QString::fromLatin1(kDashboardContinueSectionSetting), QStringLiteral("1")) != QStringLiteral("0"));
     dashboardShowRecentCheckBox_->setChecked(
@@ -3085,11 +2879,11 @@ void SettingsDialog::loadSettings()
     subtitleAutoLoadLocalMatchesCheckBox_->setChecked(settingsController_->subtitleAutoLoadLocalMatches());
     subtitlePreferredLanguagesEdit_->setText(settingsController_->subtitlePreferredLanguages());
     subtitleSyncSmallStepSpinBox_->setValue(settingsController_->subtitleSyncSmallStep());
-    subtitleSyncLargeStepSpinBox_->setValue(settingsController_->subtitleSyncLargeStep());
-    subtitleDownloadCommandEdit_->setText(settingsController_->subtitleDownloadCommand());
-    subtitleAutoExtensionsEdit_->setText(settingsController_->customValue(
-        QString::fromLatin1(revaplayer::application::kSubtitleAutoExtensionsSetting),
-        revaplayer::application::defaultSubtitleAutoExtensions()));
+    if (subtitleAutoExtensionsEdit_ != nullptr) {
+        subtitleAutoExtensionsEdit_->setText(settingsController_->customValue(
+            QString::fromLatin1(revaplayer::application::kSubtitleAutoExtensionsSetting),
+            revaplayer::application::defaultSubtitleAutoExtensions()));
+    }
     subtitleRememberTrackChoiceCheckBox_->setChecked(settingsController_->customValue(
         QString::fromLatin1(revaplayer::application::kSubtitleRememberTrackChoiceSetting),
         QStringLiteral("0")) != QStringLiteral("0"));
@@ -3191,8 +2985,8 @@ void SettingsDialog::loadSettings()
         subtitleAutoLoadModeComboBox_,
         settingsController_->customValue(
             QString::fromLatin1(revaplayer::application::kSubtitleAutoLoadModeSetting),
-            QStringLiteral("same_name")),
-        QStringLiteral("same_name"));
+            QStringLiteral("same_name_only")),
+        QStringLiteral("same_name_only"));
     applyCustomComboValue(
         subtitleEncodingComboBox_,
         settingsController_->customValue(
@@ -3244,16 +3038,24 @@ void SettingsDialog::loadSettings()
     {
         const bool legacyAutoLoadEnabled = settingsController_->subtitleAutoLoadLocalMatches();
         if (!legacyAutoLoadEnabled && subtitleAutoLoadModeComboBox_ != nullptr) {
-            const int disabledIndex = subtitleAutoLoadModeComboBox_->findData(QStringLiteral("disabled"));
-            if (disabledIndex >= 0) {
-                subtitleAutoLoadModeComboBox_->setCurrentIndex(disabledIndex);
+            int manualOnlyIndex = subtitleAutoLoadModeComboBox_->findData(QStringLiteral("manual_only"));
+            if (manualOnlyIndex < 0) {
+                manualOnlyIndex = subtitleAutoLoadModeComboBox_->findData(QStringLiteral("disabled"));
+            }
+            if (manualOnlyIndex >= 0) {
+                subtitleAutoLoadModeComboBox_->setCurrentIndex(manualOnlyIndex);
             }
         }
+        const QString autoLoadMode = subtitleAutoLoadModeComboBox_ != nullptr
+            ? subtitleAutoLoadModeComboBox_->currentData().toString()
+            : QStringLiteral("manual_only");
         const bool effectiveAutoLoadEnabled = legacyAutoLoadEnabled
             && subtitleAutoLoadModeComboBox_ != nullptr
-            && subtitleAutoLoadModeComboBox_->currentData().toString() != QStringLiteral("disabled");
+            && autoLoadMode != QStringLiteral("manual_only");
         subtitleAutoLoadLocalMatchesCheckBox_->setChecked(effectiveAutoLoadEnabled);
-        subtitleAutoExtensionsEdit_->setEnabled(effectiveAutoLoadEnabled);
+        if (subtitleAutoExtensionsEdit_ != nullptr) {
+            subtitleAutoExtensionsEdit_->setEnabled(effectiveAutoLoadEnabled);
+        }
         subtitleRememberTrackChoiceCheckBox_->setEnabled(effectiveAutoLoadEnabled);
     }
     applyCustomComboValue(
@@ -3316,7 +3118,6 @@ void SettingsDialog::loadSettings()
     gestureUpActionComboBox_->setEnabled(mouseGesturesCheckBox_->isChecked());
     gestureDownActionComboBox_->setEnabled(mouseGesturesCheckBox_->isChecked());
     const bool dashboardEnabled = dashboardEnabledCheckBox_->isChecked();
-    dashboardShowOnIdleCheckBox_->setEnabled(dashboardEnabled);
     dashboardShowContinueCheckBox_->setEnabled(dashboardEnabled);
     dashboardShowRecentCheckBox_->setEnabled(dashboardEnabled);
     dashboardShowFavoritesCheckBox_->setEnabled(dashboardEnabled);
@@ -3338,12 +3139,13 @@ void SettingsDialog::loadSettings()
         settingsController_->customValue(
             QStringLiteral("capture/screenshot_template"),
             QStringLiteral("{timestamp}-{title}-{index}")));
-    customCommands_ = settingsController_->customCommands();
-    refreshCustomCommandsList();
-    loadCustomCommandIntoEditor(customCommands_.isEmpty() ? -1 : 0);
     refreshShortcutEditorState();
     refreshSettingsSearchState();
     refreshSubtitlePreviewSample();
+    settingsDirty_ = false;
+    if (applyButton_ != nullptr) {
+        applyButton_->setEnabled(false);
+    }
 
     if (settingsController_->isReady()) {
         const QString databasePath = settingsController_->databasePath().trimmed();
@@ -3353,80 +3155,6 @@ void SettingsDialog::loadSettings()
     } else {
         storageInfoLabel_->setText(
             uiText("Settings storage is currently unavailable: %1").arg(settingsController_->lastError()));
-    }
-}
-
-void SettingsDialog::commitCustomCommandEditor()
-{
-    if (currentCustomCommandIndex_ < 0 || currentCustomCommandIndex_ >= customCommands_.size()) {
-        return;
-    }
-
-    auto &command = customCommands_[currentCustomCommandIndex_];
-    command.name = customCommandNameEdit_ != nullptr ? customCommandNameEdit_->text().trimmed() : QString {};
-    command.script = customCommandScriptEdit_ != nullptr ? customCommandScriptEdit_->toPlainText() : QString {};
-    refreshCustomCommandsList();
-}
-
-void SettingsDialog::refreshCustomCommandsList()
-{
-    if (customCommandsList_ == nullptr) {
-        return;
-    }
-
-    const int blockedRow = customCommandsList_->currentRow();
-    const QSignalBlocker blocker(customCommandsList_);
-    customCommandsList_->clear();
-    for (qsizetype index = 0; index < customCommands_.size(); ++index) {
-        const auto &command = customCommands_.at(index);
-        const QString label = command.name.trimmed().isEmpty()
-            ? uiText("Custom Command %1").arg(index + 1)
-            : command.name.trimmed();
-        customCommandsList_->addItem(label);
-    }
-
-    if (removeCustomCommandButton_ != nullptr) {
-        removeCustomCommandButton_->setEnabled(!customCommands_.isEmpty());
-    }
-    if (duplicateCustomCommandButton_ != nullptr) {
-        duplicateCustomCommandButton_->setEnabled(!customCommands_.isEmpty());
-    }
-
-    if (!customCommands_.isEmpty() && blockedRow >= 0 && blockedRow < customCommandsList_->count()) {
-        customCommandsList_->setCurrentRow(blockedRow);
-    }
-}
-
-void SettingsDialog::loadCustomCommandIntoEditor(const int index)
-{
-    if (index == currentCustomCommandIndex_ && customCommandsList_ != nullptr && customCommandsList_->currentRow() == index) {
-        if (removeCustomCommandButton_ != nullptr) {
-            removeCustomCommandButton_->setEnabled(index >= 0);
-        }
-        return;
-    }
-
-    commitCustomCommandEditor();
-    currentCustomCommandIndex_ = index;
-    const bool hasSelection = currentCustomCommandIndex_ >= 0 && currentCustomCommandIndex_ < customCommands_.size();
-    if (customCommandsList_ != nullptr && customCommandsList_->currentRow() != index) {
-        const QSignalBlocker blocker(customCommandsList_);
-        customCommandsList_->setCurrentRow(index);
-    }
-
-    if (customCommandNameEdit_ != nullptr) {
-        customCommandNameEdit_->setEnabled(hasSelection);
-        customCommandNameEdit_->setText(hasSelection ? customCommands_.at(currentCustomCommandIndex_).name : QString {});
-    }
-    if (customCommandScriptEdit_ != nullptr) {
-        customCommandScriptEdit_->setEnabled(hasSelection);
-        customCommandScriptEdit_->setPlainText(hasSelection ? customCommands_.at(currentCustomCommandIndex_).script : QString {});
-    }
-    if (removeCustomCommandButton_ != nullptr) {
-        removeCustomCommandButton_->setEnabled(hasSelection);
-    }
-    if (duplicateCustomCommandButton_ != nullptr) {
-        duplicateCustomCommandButton_->setEnabled(hasSelection);
     }
 }
 
@@ -3483,19 +3211,6 @@ void SettingsDialog::refreshSettingsSearchState()
         settingsSectionTabsContainer_->adjustSize();
     }
 
-    syncSubtitlePreviewVisibility();
-}
-
-void SettingsDialog::syncSubtitlePreviewVisibility()
-{
-    if (subtitlePreviewGroup_ == nullptr || settingsTabs_ == nullptr) {
-        return;
-    }
-
-    const bool shouldShow = subtitleTabIndex_ >= 0
-        && settingsTabs_->currentIndex() == subtitleTabIndex_
-        && settingsTabs_->isTabEnabled(subtitleTabIndex_);
-    subtitlePreviewGroup_->setVisible(shouldShow);
 }
 
 void SettingsDialog::refreshShortcutEditorState()
@@ -3578,35 +3293,6 @@ bool SettingsDialog::validateShortcuts(QString *errorMessage) const
         }
 
         assignedShortcuts.insert(portableText, row.label);
-    }
-
-    return true;
-}
-
-bool SettingsDialog::validateCustomCommands(QString *errorMessage)
-{
-    commitCustomCommandEditor();
-
-    for (qsizetype index = 0; index < customCommands_.size(); ++index) {
-        const auto &command = customCommands_.at(index);
-        const QString displayName = command.name.trimmed().isEmpty()
-            ? uiText("Custom Command %1").arg(index + 1)
-            : command.name.trimmed();
-
-        if (command.name.trimmed().isEmpty()) {
-            if (errorMessage != nullptr) {
-                *errorMessage = QStringLiteral("\"%1\" needs a name.").arg(displayName);
-            }
-            return false;
-        }
-
-        QString parseError;
-        if (revaplayer::application::parseCustomCommandScript(command.script, &parseError).isEmpty()) {
-            if (errorMessage != nullptr) {
-                *errorMessage = QStringLiteral("\"%1\": %2").arg(displayName, parseError);
-            }
-            return false;
-        }
     }
 
     return true;

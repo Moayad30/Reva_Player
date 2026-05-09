@@ -2,7 +2,6 @@
 
 #include "domain/Bookmark.hpp"
 #include "domain/ChapterInfo.hpp"
-#include "domain/CustomCommand.hpp"
 #include "domain/MediaItem.hpp"
 #include "domain/PlaybackEndReason.hpp"
 #include "domain/PlaybackDiagnostics.hpp"
@@ -26,6 +25,7 @@ class QComboBox;
 class QDragEnterEvent;
 class QDockWidget;
 class QCloseEvent;
+class QDoubleSpinBox;
 class QEvent;
 class QGridLayout;
 class QHBoxLayout;
@@ -287,8 +287,6 @@ private:
     void persistWindowState();
     void updateWindowTitle();
     [[nodiscard]] QString effectiveCurrentMediaTitle() const;
-    void rebuildCustomCommandsMenu();
-    void executeCustomCommandAtIndex(int index);
     void reloadCurrentFolderPlaylist();
     [[nodiscard]] QStringList resolvedOpenFiles(const QStringList &requestedFiles,
                                                 bool *expandedFromFolder = nullptr) const;
@@ -365,13 +363,20 @@ private:
     void rebuildSceneBrowser(bool force = false);
     void refreshSceneBrowserPrompt(bool preserveGeneratedScenes = true);
     void filterSceneBrowser();
-    void exportScenesAsCsv() const;
+    void exportSceneImages();
     void bookmarkSelectedScene();
     void requestNextSceneThumbnail();
     void populateSecondarySubtitleOptions();
     void applySecondarySubtitleSelection();
+    void setSubtitleDelayWithFeedback(double delaySeconds, bool resetRequested = false);
+    void saveRememberedSubtitleDelayForCurrentMedia();
+    void removeRememberedSubtitleDelayForCurrentMedia();
+    void applyRememberedSubtitleDelayForCurrentMedia();
     void adjustSubtitleDelayWithFeedback(double deltaSeconds);
     void resetSubtitleDelayWithFeedback();
+    void showManualSubtitleDelayDialog();
+    void setAudioDelayWithFeedback(double delaySeconds, bool resetRequested = false);
+    void showManualAudioDelayDialog();
     void maybeAutoLoadMatchingLocalSubtitles();
     [[nodiscard]] QString subtitleAutoLoadModeSetting() const;
     [[nodiscard]] QSet<QString> subtitleAutoLoadExtensionsSetting() const;
@@ -425,12 +430,6 @@ private:
     void clearRuntimeCaches();
     bool clearDiskCaches(QString *errorMessage = nullptr);
     void dispatchGestureAction(const QString &directionId);
-    void showCommandPalette();
-    void reloadScriptsPanel();
-    void runSelectedScript();
-    void importScriptFile();
-    void exportSelectedScript() const;
-    void deleteSelectedScript();
     void openCompareSource();
     void setCompareMode(const QString &modeId);
     void toggleCompareView();
@@ -500,7 +499,6 @@ private:
     [[nodiscard]] bool subtitlePreferExternal() const;
     [[nodiscard]] bool subtitleAutoLoadLocalMatchesEnabled() const;
     [[nodiscard]] double subtitleSyncSmallStep() const;
-    [[nodiscard]] double subtitleSyncLargeStep() const;
     [[nodiscard]] QString subtitleDownloadCommandTemplate() const;
     [[nodiscard]] int sceneBrowserStepSeconds() const;
     [[nodiscard]] int sceneBrowserMaxItems() const;
@@ -658,8 +656,10 @@ private:
     QLabel *sceneStatusLabel_ {nullptr};
     QListWidget *sceneList_ {nullptr};
     QComboBox *secondarySubtitleCombo_ {nullptr};
+    QDoubleSpinBox *subtitleDelayCustomSpinBox_ {nullptr};
     QLineEdit *subtitleLanguageHintEdit_ {nullptr};
     QLabel *subtitleAutomationStatusLabel_ {nullptr};
+    QCheckBox *subtitleRememberDelayForMediaCheckBox_ {nullptr};
     QCheckBox *audioNormalizeCheckBox_ {nullptr};
     QLineEdit *customAudioFilterEdit_ {nullptr};
     QLineEdit *customVideoFilterEdit_ {nullptr};
@@ -679,14 +679,6 @@ private:
     QListWidget *favoritesList_ {nullptr};
     QListWidget *chaptersList_ {nullptr};
     QTreeWidget *tracksTree_ {nullptr};
-    QWidget *scriptsPage_ {nullptr};
-    QListWidget *scriptsList_ {nullptr};
-    QLabel *scriptsStatusLabel_ {nullptr};
-    QToolButton *scriptsReloadButton_ {nullptr};
-    QToolButton *scriptsImportButton_ {nullptr};
-    QToolButton *scriptsExportButton_ {nullptr};
-    QToolButton *scriptsDeleteButton_ {nullptr};
-    QToolButton *scriptsRunButton_ {nullptr};
     QWidget *homeDashboard_ {nullptr};
     QLabel *homeDashboardTitleLabel_ {nullptr};
     QLabel *homeDashboardSubtitleLabel_ {nullptr};
@@ -714,18 +706,11 @@ private:
     QAction *showMediaInfoAction_ {nullptr};
     QAction *preferencesAction_ {nullptr};
     QAction *closeApplicationAction_ {nullptr};
-    QAction *commandPaletteAction_ {nullptr};
-    QAction *showScriptsPanelAction_ {nullptr};
     QAction *showScreenshotSuiteAction_ {nullptr};
     QAction *resetLayoutAction_ {nullptr};
     QAction *saveLayoutPresetAction_ {nullptr};
     QAction *loadLayoutPresetAction_ {nullptr};
     QAction *deleteLayoutPresetAction_ {nullptr};
-    QAction *customCommandSlot1Action_ {nullptr};
-    QAction *customCommandSlot2Action_ {nullptr};
-    QAction *customCommandSlot3Action_ {nullptr};
-    QAction *customCommandSlot4Action_ {nullptr};
-    QAction *customCommandSlot5Action_ {nullptr};
     QAction *takeScreenshotAction_ {nullptr};
     QAction *favoriteCurrentMediaAction_ {nullptr};
     QAction *addBookmarkAction_ {nullptr};
@@ -741,7 +726,6 @@ private:
     QActionGroup *repeatModeActionGroup_ {nullptr};
     QMenu *themeMenu_ {nullptr};
     QActionGroup *themeActionGroup_ {nullptr};
-    QMenu *customCommandsMenu_ {nullptr};
     QMenu *aspectMenu_ {nullptr};
     QActionGroup *aspectActionGroup_ {nullptr};
     QMenu *videoQualityMenu_ {nullptr};
@@ -774,9 +758,11 @@ private:
     QAction *subtitleDelayDownAction_ {nullptr};
     QAction *subtitleDelayUpAction_ {nullptr};
     QAction *subtitleDelayResetAction_ {nullptr};
+    QAction *subtitleDelayManualAction_ {nullptr};
     QAction *audioDelayDownAction_ {nullptr};
     QAction *audioDelayUpAction_ {nullptr};
     QAction *audioDelayResetAction_ {nullptr};
+    QAction *audioDelayManualAction_ {nullptr};
     QAction *deinterlaceAction_ {nullptr};
     QAction *showMediaInformationOverlayAction_ {nullptr};
     QAction *aspectDefaultAction_ {nullptr};
@@ -827,7 +813,6 @@ private:
     QString compareModeId_ {QStringLiteral("off")};
     QVector<revaplayer::domain::TrackInfo> currentTracks_;
     QVector<revaplayer::domain::Bookmark> currentBookmarks_;
-    QVector<revaplayer::domain::CustomCommand> customCommands_;
     QVector<revaplayer::infrastructure::storage::PlaybackHistoryRecord> historyEntries_;
     QVector<revaplayer::domain::PlaylistEntry> playbackPlaylistEntriesCache_;
     QHash<QString, revaplayer::infrastructure::storage::PlaybackHistoryRecord> historyEntriesBySource_;
@@ -842,7 +827,6 @@ private:
     QVector<qint64> sceneThumbnailQueue_;
     QHash<qint64, QVector<int>> bookmarkRowsByBucket_;
     QHash<qint64, int> sceneRowByBucket_;
-    QStringList scriptFilePaths_;
     QStringList playlistThumbnailQueue_;
     QPoint previewHoverAnchor_;
     double currentPositionSeconds_ {0.0};

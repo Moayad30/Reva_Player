@@ -3,6 +3,7 @@
 #include "application/PlaybackTuning.hpp"
 #include "application/UiLanguage.hpp"
 
+#include <QApplication>
 #include <QEvent>
 #include <QAction>
 #include <QFont>
@@ -57,6 +58,69 @@ QColor blendColors(const QColor &from, const QColor &to, const qreal ratio)
 bool isPaletteDark(const QPalette &palette)
 {
     return palette.color(QPalette::Window).lightness() < 128;
+}
+
+QColor paletteColor(const QWidget *widget, const QPalette::ColorRole role, const QColor &fallback)
+{
+    if (widget == nullptr) {
+        return fallback;
+    }
+
+    const QPalette::ColorGroup group = widget->isEnabled() ? QPalette::Active : QPalette::Disabled;
+    const QColor color = widget->palette().color(group, role);
+    return color.isValid() ? color : fallback;
+}
+
+QColor sliderAccentColor(const QWidget *widget, const QColor &fallback)
+{
+    Q_UNUSED(widget);
+
+    QColor color = QApplication::palette().color(QPalette::Active, QPalette::Highlight);
+    if (!color.isValid()) {
+        color = fallback;
+    }
+    color.setAlpha(255);
+    return color;
+}
+
+QColor volumeLowColor()
+{
+    return QColor(QStringLiteral("#ffb55f"));
+}
+
+QColor volumeMidColor()
+{
+    return QColor(QStringLiteral("#ff9d18"));
+}
+
+QColor volumeNormalLimitColor()
+{
+    return QColor(QStringLiteral("#ff9d18"));
+}
+
+QColor volumeBoostEndColor()
+{
+    return QColor(QStringLiteral("#ff5a00"));
+}
+
+QColor volumeBoostStartColor()
+{
+    return QColor(QStringLiteral("#ff5a00"));
+}
+
+QColor volumeColorForNormalLevel(const qreal level)
+{
+    const qreal normalizedLevel = std::clamp(level, 0.0, 1.0);
+    if (normalizedLevel < 0.62) {
+        return blendColors(volumeLowColor(), volumeMidColor(), normalizedLevel / 0.62);
+    }
+
+    return blendColors(volumeMidColor(), volumeNormalLimitColor(), (normalizedLevel - 0.62) / 0.38);
+}
+
+QColor volumeColorForBoostLevel(const qreal level)
+{
+    return blendColors(volumeBoostStartColor(), volumeBoostEndColor(), std::clamp(level, 0.0, 1.0));
 }
 
 int labeledButtonMinimumWidth(const QToolButton *button,
@@ -131,23 +195,35 @@ public:
         update();
     }
 
+    void setVisualMetrics(const int grooveHeight, const int handleSize)
+    {
+        const int normalizedGroove = std::clamp(grooveHeight, 4, 18);
+        const int normalizedHandle = std::clamp(handleSize, normalizedGroove + 4, 30);
+        if (grooveHeight_ == normalizedGroove && handleSize_ == normalizedHandle) {
+            return;
+        }
+        grooveHeight_ = normalizedGroove;
+        handleSize_ = normalizedHandle;
+        update();
+    }
+
 protected:
     void paintEvent(QPaintEvent *event) override
     {
-        QSlider::paintEvent(event);
+        Q_UNUSED(event);
 
-        if (orientation() != Qt::Horizontal || durationSeconds_ <= 0.0) {
+        if (orientation() != Qt::Horizontal) {
+            QSlider::paintEvent(event);
             return;
         }
 
-        QStyleOptionSlider option;
-        initStyleOption(&option);
-        const QRect grooveRect = style()->subControlRect(
-            QStyle::CC_Slider,
-            &option,
-            QStyle::SC_SliderGroove,
-            this);
-        if (!grooveRect.isValid() || grooveRect.width() <= 0) {
+        const int sidePadding = std::max(2, handleSize_ / 2);
+        const QRectF trackRect(
+            sidePadding,
+            (height() - grooveHeight_) / 2.0,
+            std::max(1, width() - (sidePadding * 2)),
+            grooveHeight_);
+        if (!trackRect.isValid() || trackRect.width() <= 0.0) {
             return;
         }
 
@@ -155,26 +231,56 @@ protected:
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
 
+        const QColor accent = sliderAccentColor(this, QColor(QStringLiteral("#2d98ff")));
+        const bool darkPalette = isPaletteDark(palette());
+        QColor grooveStart = paletteColor(this, QPalette::Base, darkPalette ? QColor(QStringLiteral("#0c121b")) : QColor(QStringLiteral("#f7efe4")));
+        QColor grooveEnd = paletteColor(this, QPalette::AlternateBase, darkPalette ? QColor(QStringLiteral("#151d29")) : QColor(QStringLiteral("#fff8ee")));
+        grooveStart.setAlpha(255);
+        grooveEnd.setAlpha(255);
+        QLinearGradient grooveGradient(trackRect.topLeft(), trackRect.topRight());
+        grooveGradient.setColorAt(0.0, grooveStart);
+        grooveGradient.setColorAt(1.0, grooveEnd);
+        painter.setBrush(grooveGradient);
+        painter.drawRoundedRect(trackRect, grooveHeight_ / 2.0, grooveHeight_ / 2.0);
+
         const int sliderSpan = std::max(1, maximum() - minimum());
         const double playedFraction = std::clamp(
             static_cast<double>(value() - minimum()) / sliderSpan,
             0.0,
             1.0);
+        QColor progressStart = accent;
+        QColor progressEnd = accent;
+        progressStart.setAlpha(255);
+        progressEnd.setAlpha(255);
+        const qreal playedWidth = playedFraction * trackRect.width();
+        const auto drawProgressOverlay = [&]() {
+            if (playedWidth <= 0.0) {
+                return;
+            }
+            const QRectF progressRect(
+                trackRect.left(),
+                trackRect.top(),
+                playedWidth,
+                trackRect.height());
+            QLinearGradient progressGradient(progressRect.topLeft(), progressRect.topRight());
+            progressGradient.setColorAt(0.0, progressStart);
+            progressGradient.setColorAt(1.0, progressEnd);
+            painter.setBrush(progressGradient);
+            painter.drawRoundedRect(progressRect, grooveHeight_ / 2.0, grooveHeight_ / 2.0);
+        };
+
         const double bufferedFraction = std::clamp(bufferedSeconds_ / durationSeconds_, 0.0, 1.0);
-        if (bufferedFraction > playedFraction + 0.002) {
-            const int grooveSpan = std::max(1, grooveRect.width() - 1);
-            const int playedX = grooveRect.left()
-                + static_cast<int>(std::lround(playedFraction * grooveSpan));
-            const int bufferedX = grooveRect.left()
-                + static_cast<int>(std::lround(bufferedFraction * grooveSpan));
-            const int segmentWidth = std::max(0, bufferedX - playedX);
-            if (segmentWidth > 0) {
-                QColor bufferedColor = palette().highlight().color().lighter(165);
-                bufferedColor.setAlpha(118);
-                const qreal bufferHeight = std::max<qreal>(3.0, grooveRect.height() - 2.0);
+        if (durationSeconds_ > 0.0 && bufferedFraction > playedFraction + 0.002) {
+            const qreal playedX = trackRect.left() + (playedFraction * trackRect.width());
+            const qreal bufferedX = trackRect.left() + (bufferedFraction * trackRect.width());
+            const qreal segmentWidth = std::max<qreal>(0.0, bufferedX - playedX);
+            if (segmentWidth > 0.0) {
+                QColor bufferedColor = accent.lighter(darkPalette ? 135 : 122);
+                bufferedColor.setAlpha(isEnabled() ? 118 : 72);
+                const qreal bufferHeight = std::max<qreal>(3.0, trackRect.height() - 2.0);
                 const QRectF bufferedRect(
                     playedX,
-                    grooveRect.center().y() - (bufferHeight / 2.0),
+                    trackRect.center().y() - (bufferHeight / 2.0),
                     segmentWidth,
                     bufferHeight);
                 painter.setBrush(bufferedColor);
@@ -182,26 +288,42 @@ protected:
             }
         }
 
-        if (markers_.isEmpty()) {
-            return;
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        drawProgressOverlay();
+
+        if (durationSeconds_ > 0.0) {
+            for (const auto &marker : markers_) {
+                const double fraction = std::clamp(marker.timeSeconds / durationSeconds_, 0.0, 1.0);
+                const qreal x = trackRect.left() + (fraction * trackRect.width());
+                const QRectF markerRect(x - 1.0, trackRect.center().y() - 5.0, 3.0, 10.0);
+                painter.setBrush(marker.label.trimmed().isEmpty()
+                                     ? QColor(QStringLiteral("#8da1bc"))
+                                     : QColor(QStringLiteral("#f4c97a")));
+                painter.drawRoundedRect(markerRect, 1.4, 1.4);
+            }
         }
 
-        for (const auto &marker : markers_) {
-            const double fraction = std::clamp(marker.timeSeconds / durationSeconds_, 0.0, 1.0);
-            const int x = grooveRect.left()
-                + static_cast<int>(std::lround(fraction * std::max(1, grooveRect.width() - 1)));
-            const QRect markerRect(x - 1, grooveRect.center().y() - 5, 3, 10);
-            painter.setBrush(marker.label.trimmed().isEmpty()
-                                 ? QColor(QStringLiteral("#8da1bc"))
-                                 : QColor(QStringLiteral("#f4c97a")));
-            painter.drawRoundedRect(markerRect, 1.4, 1.4);
-        }
+        const QPointF handleCenter(trackRect.left() + playedWidth, trackRect.center().y());
+        const QRectF handleRect(
+            handleCenter.x() - (handleSize_ / 2.0),
+            handleCenter.y() - (handleSize_ / 2.0),
+            handleSize_,
+            handleSize_);
+        QColor handleColor = accent.lighter(darkPalette ? 114 : 106);
+        handleColor.setAlpha(255);
+        QColor handleBorder = accent.darker(darkPalette ? 135 : 150);
+        handleBorder.setAlpha(255);
+        painter.setPen(QPen(handleBorder, 1.2));
+        painter.setBrush(handleColor);
+        painter.drawEllipse(handleRect.adjusted(1.0, 1.0, -1.0, -1.0));
     }
 
 private:
     QVector<revaplayer::ui::TimelineMarker> markers_;
     double durationSeconds_ {0.0};
     double bufferedSeconds_ {0.0};
+    int grooveHeight_ {6};
+    int handleSize_ {16};
 };
 
 class VolumeSlider final : public QSlider {
@@ -245,18 +367,20 @@ protected:
         painter.setRenderHint(QPainter::Antialiasing, true);
         const bool darkPalette = isPaletteDark(palette());
 
-        QColor grooveStart = darkPalette ? QColor(QStringLiteral("#111720")) : QColor(QStringLiteral("#1d2530"));
-        QColor grooveEnd = darkPalette ? QColor(QStringLiteral("#202838")) : QColor(QStringLiteral("#2f3b4c"));
-        grooveStart.setAlpha(darkPalette ? 236 : 214);
-        grooveEnd.setAlpha(darkPalette ? 240 : 220);
-        QColor grooveBorder = darkPalette ? QColor(QStringLiteral("#70461d")) : QColor(QStringLiteral("#96581d"));
-        grooveBorder.setAlpha(darkPalette ? 164 : 144);
-        QColor normalZoneStart = darkPalette ? QColor(QStringLiteral("#754111")) : QColor(QStringLiteral("#9d560e"));
-        QColor normalZoneEnd = darkPalette ? QColor(QStringLiteral("#925115")) : QColor(QStringLiteral("#c06b14"));
-        normalZoneStart.setAlpha(darkPalette ? 162 : 134);
-        normalZoneEnd.setAlpha(darkPalette ? 184 : 148);
-        QColor markerColor = darkPalette ? QColor(QStringLiteral("#fff4dc")) : QColor(QStringLiteral("#ffe7be"));
-        markerColor.setAlpha(darkPalette ? 236 : 220);
+        QColor grooveStart = paletteColor(this, QPalette::Base, darkPalette ? QColor(QStringLiteral("#111720")) : QColor(QStringLiteral("#f6f8fb")));
+        QColor grooveEnd = paletteColor(this, QPalette::AlternateBase, darkPalette ? QColor(QStringLiteral("#202838")) : QColor(QStringLiteral("#e8eef6")));
+        grooveStart.setAlpha(isEnabled() ? (darkPalette ? 236 : 232) : 168);
+        grooveEnd.setAlpha(isEnabled() ? (darkPalette ? 240 : 236) : 172);
+        const QColor volumeLow = volumeLowColor();
+        const QColor volumeNormalLimit = volumeNormalLimitColor();
+        QColor grooveBorder = darkPalette ? QColor(QStringLiteral("#9b5a16")) : QColor(QStringLiteral("#b26512"));
+        grooveBorder.setAlpha(isEnabled() ? (darkPalette ? 164 : 144) : 96);
+        QColor normalZoneStart = blendColors(grooveStart, volumeLow.darker(150), darkPalette ? 0.42 : 0.34);
+        QColor normalZoneEnd = blendColors(grooveEnd, volumeNormalLimit, darkPalette ? 0.50 : 0.42);
+        normalZoneStart.setAlpha(isEnabled() ? (darkPalette ? 162 : 134) : 82);
+        normalZoneEnd.setAlpha(isEnabled() ? (darkPalette ? 184 : 148) : 94);
+        QColor markerColor = QColor(QStringLiteral("#fff4dc"));
+        markerColor.setAlpha(isEnabled() ? (darkPalette ? 236 : 220) : 132);
 
         const QRectF trackRect = grooveRect.adjusted(0, 1, 0, -1);
         const qreal trackRadius = std::max<qreal>(3.0, trackRect.height() / 2.0);
@@ -289,8 +413,15 @@ protected:
                   0.0,
                   1.0)
             : 0.0;
-        const QColor baseFillStart = boosted ? QColor(QStringLiteral("#ffc56d")) : QColor(QStringLiteral("#ffd67d"));
-        const QColor baseFillEnd = boosted ? QColor(QStringLiteral("#ff6f00")) : QColor(QStringLiteral("#ff961f"));
+        const qreal normalLevel = normalMaximum_ > minimum()
+            ? std::clamp(
+                  static_cast<qreal>(std::clamp(value(), minimum(), normalMaximum_) - minimum())
+                      / static_cast<qreal>(std::max(1, normalMaximum_ - minimum())),
+                  0.0,
+                  1.0)
+            : playedFraction;
+        const QColor normalFillColor = volumeColorForNormalLevel(normalLevel);
+        const QColor boostFillColor = volumeColorForBoostLevel(boostRatio);
         painter.setPen(Qt::NoPen);
 
         if (normalWidth > 0) {
@@ -304,9 +435,11 @@ protected:
                 trackRadius);
         }
         if (baseWidth > 0) {
-            QLinearGradient baseFillGradient(trackRect.topLeft(), trackRect.topRight());
-            baseFillGradient.setColorAt(0.0, baseFillStart);
-            baseFillGradient.setColorAt(1.0, baseFillEnd);
+            QLinearGradient baseFillGradient(
+                trackRect.topLeft(),
+                QPointF(trackRect.left() + std::max<qreal>(1.0, baseWidth), trackRect.top()));
+            baseFillGradient.setColorAt(0.0, normalFillColor.lighter(104));
+            baseFillGradient.setColorAt(1.0, normalFillColor);
             painter.setBrush(baseFillGradient);
             painter.drawRoundedRect(
                 QRectF(trackRect.left(), trackRect.top(), baseWidth, trackRect.height()),
@@ -314,17 +447,11 @@ protected:
                 trackRadius);
         }
         if (boostWidth > 0) {
-            const QColor boostFillStart = blendColors(
-                QColor(QStringLiteral("#ff8d1c")),
-                QColor(QStringLiteral("#ff5a00")),
-                std::min<qreal>(0.82, boostRatio * 0.88));
-            const QColor boostFillEnd = blendColors(
-                QColor(QStringLiteral("#ff5600")),
-                QColor(QStringLiteral("#cf2f00")),
-                std::min<qreal>(1.0, 0.38 + boostRatio * 0.72));
-            QLinearGradient boostFillGradient(trackRect.topLeft(), trackRect.topRight());
-            boostFillGradient.setColorAt(0.0, boostFillStart);
-            boostFillGradient.setColorAt(1.0, boostFillEnd);
+            QLinearGradient boostFillGradient(
+                QPointF(trackRect.left() + normalWidth, trackRect.top()),
+                trackRect.topRight());
+            boostFillGradient.setColorAt(0.0, boostFillColor.lighter(105));
+            boostFillGradient.setColorAt(1.0, boostFillColor);
             painter.setBrush(boostFillGradient);
             painter.drawRoundedRect(
                 QRectF(trackRect.left() + normalWidth, trackRect.top(), boostWidth, trackRect.height()),
@@ -353,13 +480,15 @@ protected:
             handleRect = QRect(centerX - (diameter / 2), centerY - (diameter / 2), diameter, diameter);
         }
         const QRectF handleRectF = QRectF(handleRect).adjusted(1.0, 1.0, -1.0, -1.0);
-        QColor handleStart = boosted ? QColor(QStringLiteral("#ffd08a")) : QColor(QStringLiteral("#fff8ed"));
-        QColor handleEnd = boosted ? QColor(QStringLiteral("#ff7a00")) : QColor(QStringLiteral("#ffd78e"));
+        QColor handleStart = boosted
+            ? blendColors(QColor(QStringLiteral("#ff7a35")), QColor(QStringLiteral("#da2a0a")), boostRatio)
+            : blendColors(QColor(QStringLiteral("#fff4dc")), QColor(QStringLiteral("#ff7a35")), normalLevel);
+        QColor handleEnd = boosted ? boostFillColor : normalFillColor;
         QColor handleBorder = boosted ? QColor(QStringLiteral("#8d3300")) : QColor(QStringLiteral("#ad6a1f"));
         handleBorder.setAlpha(boosted ? 190 : 132);
 
         if (boosted) {
-            painter.setBrush(QColor(QStringLiteral("#ff7a00")));
+            painter.setBrush(boostFillColor);
             painter.setPen(Qt::NoPen);
             painter.drawEllipse(handleRectF.adjusted(-1.0, -1.0, 1.0, 1.0));
         }
@@ -400,61 +529,20 @@ QString rgbaCss(const QColor &color)
         .arg(color.alpha());
 }
 
-QString sliderStyleSheet(const QPalette &palette, const int grooveHeight, const int handleSize)
-{
-    QColor grooveColor(QStringLiteral("#1a2029"));
-    grooveColor.setAlpha(235);
-    QColor progressColor(QStringLiteral("#4ea4ff"));
-    QColor handleColor(QStringLiteral("#f5f8ff"));
-    QColor borderColor = palette.color(QPalette::Shadow);
-    borderColor.setAlpha(58);
-
-    const int safeGrooveHeight = std::clamp(grooveHeight, 4, 18);
-    const int safeHandleSize = std::clamp(handleSize, safeGrooveHeight + 4, 30);
-    const int grooveRadius = std::max(2, safeGrooveHeight / 2);
-    const int handleRadius = std::max(3, safeHandleSize / 2);
-    const int handleMargin = -std::max(1, (safeHandleSize - safeGrooveHeight) / 2);
-
-    return QStringLiteral(
-               "QSlider::groove:horizontal {"
-               " background: %1;"
-               " border-radius: %2px;"
-               " height: %3px;"
-               "}"
-               "QSlider::sub-page:horizontal {"
-               " background: %4;"
-               " border-radius: %2px;"
-               "}"
-               "QSlider::handle:horizontal {"
-               " background: %5;"
-               " border: 1px solid %6;"
-               " border-radius: %7px;"
-               " margin: %8px 0;"
-               " width: %9px;"
-               "}")
-        .arg(rgbaCss(grooveColor))
-        .arg(grooveRadius)
-        .arg(safeGrooveHeight)
-        .arg(rgbaCss(progressColor))
-        .arg(rgbaCss(handleColor))
-        .arg(rgbaCss(borderColor))
-        .arg(handleRadius)
-        .arg(handleMargin)
-        .arg(safeHandleSize);
-}
-
 QString volumeSliderStyleSheet(const QPalette &palette, const int grooveHeight, const int handleSize)
 {
     const bool darkPalette = isPaletteDark(palette);
-    QColor grooveColor = darkPalette ? QColor(QStringLiteral("#2a1a0a")) : QColor(QStringLiteral("#5b3610"));
+    QColor grooveColor = darkPalette ? QColor(QStringLiteral("#111720")) : QColor(QStringLiteral("#1d2530"));
     grooveColor.setAlpha(darkPalette ? 232 : 190);
     QColor addPageColor = darkPalette ? QColor(QStringLiteral("#171a21")) : QColor(QStringLiteral("#2e3138"));
     addPageColor.setAlpha(darkPalette ? 244 : 214);
-    QColor progressStart = darkPalette ? QColor(QStringLiteral("#ffcf74")) : QColor(QStringLiteral("#ffbf59"));
-    QColor progressEnd = darkPalette ? QColor(QStringLiteral("#ff8a12")) : QColor(QStringLiteral("#ff8d14"));
-    QColor handleColor = darkPalette ? QColor(QStringLiteral("#ffca6f")) : QColor(QStringLiteral("#ff9a1f"));
-    handleColor.setAlpha(darkPalette ? 248 : 238);
-    QColor borderColor = darkPalette ? QColor(QStringLiteral("#fff0cb")) : QColor(QStringLiteral("#a65200"));
+    QColor progressStart = volumeLowColor();
+    QColor progressEnd = volumeNormalLimitColor();
+    QColor handleColor = volumeMidColor();
+    progressStart.setAlpha(255);
+    progressEnd.setAlpha(255);
+    handleColor.setAlpha(255);
+    QColor borderColor = darkPalette ? QColor(QStringLiteral("#9b5a16")) : QColor(QStringLiteral("#b26512"));
     borderColor.setAlpha(darkPalette ? 136 : 104);
 
     const int safeGrooveHeight = std::clamp(grooveHeight, 4, 18);
@@ -599,13 +687,24 @@ QIcon drawGlyphIcon(const ControlGlyph glyph, const QColor &color, const QSize &
     }
     case ControlGlyph::Details: {
         painter.setBrush(Qt::NoBrush);
-        painter.drawLine(pointAt(0.18, 0.28), pointAt(0.82, 0.28));
-        painter.drawLine(pointAt(0.18, 0.50), pointAt(0.82, 0.50));
-        painter.drawLine(pointAt(0.18, 0.72), pointAt(0.82, 0.72));
+        const QRectF cardRect(pointAt(0.18, 0.18), QSizeF(rect.width() * 0.64, rect.height() * 0.64));
+        painter.drawRoundedRect(cardRect, 3.0, 3.0);
+        painter.drawLine(pointAt(0.30, 0.36), pointAt(0.62, 0.36));
+        painter.drawLine(pointAt(0.30, 0.50), pointAt(0.68, 0.50));
+        painter.drawLine(pointAt(0.30, 0.64), pointAt(0.56, 0.64));
+
         painter.setBrush(color);
-        painter.drawEllipse(pointAt(0.34, 0.28), 1.8, 1.8);
-        painter.drawEllipse(pointAt(0.60, 0.50), 1.8, 1.8);
-        painter.drawEllipse(pointAt(0.44, 0.72), 1.8, 1.8);
+        painter.drawEllipse(pointAt(0.68, 0.28), rect.width() * 0.13, rect.height() * 0.13);
+
+        QFont infoFont = painter.font();
+        infoFont.setBold(true);
+        infoFont.setPixelSize(std::max(8, static_cast<int>(size.height() * 0.32)));
+        painter.setFont(infoFont);
+        painter.setPen(Qt::white);
+        painter.drawText(
+            QRectF(pointAt(0.55, 0.15), QSizeF(rect.width() * 0.26, rect.height() * 0.26)),
+            Qt::AlignCenter,
+            QStringLiteral("i"));
         break;
     }
     case ControlGlyph::Volume: {
@@ -1124,6 +1223,12 @@ void ControlBar::setExpressiveLabelsEnabled(const bool enabled)
     updateButtonLabels();
 }
 
+void ControlBar::refreshPresentation()
+{
+    updateVisualMetrics();
+    updateButtonIcons();
+}
+
 void ControlBar::setTimelineThickness(const int pixels)
 {
     const int safePixels = std::clamp(pixels, 4, 18);
@@ -1495,7 +1600,10 @@ void ControlBar::updateSliderStyleSheets()
         const int safeTimelineThickness = std::clamp(timelineThickness_, 4, 18);
         const int safeTimelineHandle = std::clamp(timelineHandleSize_, safeTimelineThickness + 4, 30);
         positionSlider_->setFixedHeight(std::max(safeTimelineHandle + 8, safeTimelineThickness + 10));
-        positionSlider_->setStyleSheet(sliderStyleSheet(positionSlider_->palette(), safeTimelineThickness, safeTimelineHandle));
+        positionSlider_->setStyleSheet(QString {});
+        if (auto *timelineSlider = static_cast<TimelineSlider *>(positionSlider_); timelineSlider != nullptr) {
+            timelineSlider->setVisualMetrics(safeTimelineThickness, safeTimelineHandle);
+        }
     }
 
     if (volumeSlider_ != nullptr) {
@@ -1553,9 +1661,16 @@ void ControlBar::updateVolumePresentation()
 void ControlBar::updateVisualMetrics()
 {
     const ControlBarStyleMetrics metrics = controlBarMetrics();
+    const bool openIconOnly = expressiveLabelsEnabled_ || property("overlayMode").toBool();
 
     if (openButton_ != nullptr) {
-        openButton_->setFixedHeight(metrics.regularButtonSize);
+        if (openIconOnly) {
+            openButton_->setFixedSize(metrics.regularButtonSize, metrics.regularButtonSize);
+        } else {
+            openButton_->setMinimumWidth(40);
+            openButton_->setMaximumWidth(QWIDGETSIZE_MAX);
+            openButton_->setFixedHeight(metrics.regularButtonSize);
+        }
     }
     if (previousButton_ != nullptr) {
         previousButton_->setFixedSize(metrics.regularButtonSize, metrics.regularButtonSize);
@@ -1608,17 +1723,22 @@ void ControlBar::updateVisualMetrics()
 
 void ControlBar::updateButtonLabels()
 {
-    const bool compactLabels = expressiveLabelsEnabled_;
-    const QString openText = compactLabels ? QString {} : uiText("Open");
+    const bool openIconOnly = expressiveLabelsEnabled_ || property("overlayMode").toBool();
+    const QString openText = openIconOnly ? QString {} : uiText("Open");
 
     openButton_->setText(openText);
     playlistButton_->setText(QString {});
     detailsButton_->setText(QString {});
-    openButton_->setMinimumWidth(labeledButtonMinimumWidth(openButton_, openText, 40));
+    if (openIconOnly) {
+        openButton_->setFixedWidth(controlBarMetrics().regularButtonSize);
+    } else {
+        openButton_->setMinimumWidth(labeledButtonMinimumWidth(openButton_, openText, 40));
+        openButton_->setMaximumWidth(QWIDGETSIZE_MAX);
+    }
     playlistButton_->setMinimumWidth(controlBarMetrics().panelButtonWidth);
     detailsButton_->setMinimumWidth(controlBarMetrics().panelButtonWidth);
 
-    openButton_->setToolButtonStyle(compactLabels ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+    openButton_->setToolButtonStyle(openIconOnly ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
     playlistButton_->setToolButtonStyle(Qt::ToolButtonIconOnly);
     detailsButton_->setToolButtonStyle(Qt::ToolButtonIconOnly);
     previousButton_->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -1769,6 +1889,7 @@ void ControlBar::updateButtonIcons()
         : QColor(QStringLiteral("#7ba5ff"));
     const QSize regularIconSize(18, 18);
     const QSize primaryIconSize(20, 20);
+    const QSize detailsIconSize(20, 20);
 
     if (openButton_ != nullptr) {
         openButton_->setIcon(drawGlyphIcon(ControlGlyph::Open, baseColor, regularIconSize));
@@ -1799,8 +1920,8 @@ void ControlBar::updateButtonIcons()
         playlistButton_->setIconSize(regularIconSize);
     }
     if (detailsButton_ != nullptr) {
-        detailsButton_->setIcon(drawGlyphIcon(ControlGlyph::Details, baseColor, regularIconSize));
-        detailsButton_->setIconSize(regularIconSize);
+        detailsButton_->setIcon(drawGlyphIcon(ControlGlyph::Details, baseColor, detailsIconSize));
+        detailsButton_->setIconSize(detailsIconSize);
     }
     if (volumeIconLabel_ != nullptr) {
         volumeIconLabel_->setPixmap(drawGlyphIcon(ControlGlyph::Volume, baseColor, QSize(18, 18)).pixmap(18, 18));

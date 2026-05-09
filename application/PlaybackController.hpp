@@ -1,6 +1,5 @@
 #pragma once
 
-#include "application/CustomCommandScript.hpp"
 #include "domain/ChapterInfo.hpp"
 #include "domain/MediaItem.hpp"
 #include "domain/PlaybackEndReason.hpp"
@@ -34,7 +33,6 @@ public:
     void togglePause();
     void stop();
     bool executeMpvCommand(const QStringList &arguments);
-    bool executeCustomCommandScript(const QString &script, QString *errorMessage = nullptr);
     void loadSubtitleFile(const QString &filePath);
     bool captureScreenshot(const QString &filePath);
     void seekToSeconds(double seconds);

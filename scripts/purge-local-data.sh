@@ -75,18 +75,12 @@ esac
 
 ensure_not_running
 
-legacy_prefix="new"
-legacy_stem="potplayer"
-legacy_home_dir="${HOME}/.${legacy_prefix}${legacy_stem}"
-legacy_database_file="${XDG_DATA_HOME_DIR}/RevaPlayer/Reva Player/${legacy_prefix}${legacy_stem}.sqlite"
-
 data_paths=(
     "${XDG_DATA_HOME_DIR}/RevaPlayer/Reva Player"
     "${XDG_DATA_HOME_DIR}/RevaPlayer"
     "${XDG_DATA_HOME_DIR}/Reva Player"
     "${XDG_DATA_HOME_DIR}/revaplayer"
     "${XDG_DATA_HOME_DIR}/${APP_ID}"
-    "${legacy_home_dir}"
 )
 
 cache_paths=(
@@ -114,7 +108,6 @@ state_paths=(
 )
 
 legacy_paths=(
-    "${legacy_database_file}"
     "${XDG_DATA_HOME_DIR}/RevaPlayer/Reva Player/scripts"
     "${XDG_DATA_HOME_DIR}/RevaPlayer/Reva Player/scripts-panel"
     "${XDG_CACHE_HOME_DIR}/RevaPlayer/Reva Player/playlist-thumbnails"

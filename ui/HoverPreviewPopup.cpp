@@ -52,7 +52,7 @@ HoverPreviewPopup::HoverPreviewPopup(QWidget *parent)
 
 void HoverPreviewPopup::setPreviewWidth(const int width)
 {
-    previewWidth_ = std::clamp(width, 224, 480);
+    previewWidth_ = std::clamp(width, 224, 1800);
     imageLabel_->setFixedSize(previewWidth_, std::max(90, static_cast<int>(std::lround(previewWidth_ * 9.0 / 16.0))));
     adjustSize();
 }

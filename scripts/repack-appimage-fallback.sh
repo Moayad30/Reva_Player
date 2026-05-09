@@ -470,23 +470,13 @@ mkdir -p "${appdir}/usr/bin" \
          "${appdir}/usr/share/icons/hicolor/scalable/apps" \
          "${appdir}/usr/plugins/platformthemes"
 
-legacy_prefix="new"
-legacy_display="Pot""Player"
-legacy_binary_name="${legacy_prefix}${legacy_display}"
-legacy_app_id="${APP_ID/io.github.moayad30.revaplayer/io.github.moayad30.${legacy_prefix}potplayer}"
-legacy_icon_name="${legacy_prefix}potplayer"
-
-rm -f "${appdir}/usr/bin/RevaPlayer" \
-      "${appdir}/usr/bin/RevaPlayer.bin" \
-      "${appdir}/usr/bin/${legacy_binary_name}" \
-      "${appdir}/usr/bin/${legacy_binary_name}.bin" \
-      "${appdir}/AppRun" \
+find "${appdir}/usr/bin" -maxdepth 1 \( -type f -o -type l \) -delete
+rm -f "${appdir}/AppRun" \
       "${appdir}/AppRun.wrapped" \
       "${appdir}/io.github.moayad30.revaplayer.desktop" \
       "${appdir}/${APP_ID}.desktop" \
-      "${appdir}/${legacy_app_id}.desktop" \
-      "${appdir}/revaplayer.svg" \
-      "${appdir}/${legacy_icon_name}.svg"
+      "${appdir}/revaplayer.svg"
+find "${appdir}" -maxdepth 1 -type f \( -name '*.desktop' -o -name '*.svg' \) -delete
 
 cp -f "${install_root}/usr/bin/${APP_BINARY_NAME}" "${appdir}/usr/bin/${APP_BINARY_NAME}.bin"
 write_wrapper_binary "${appdir}/usr/bin/${APP_BINARY_NAME}" "${APP_BINARY_NAME}.bin"

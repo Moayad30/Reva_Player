@@ -38,7 +38,6 @@ private:
     QLabel *themeLabel_ {nullptr};
     QComboBox *languageComboBox_ {nullptr};
     QComboBox *themeComboBox_ {nullptr};
-    QCheckBox *dashboardCheckBox_ {nullptr};
     QCheckBox *progressCheckBox_ {nullptr};
     QDialogButtonBox *buttonBox_ {nullptr};
     QFormLayout *formLayout_ {nullptr};

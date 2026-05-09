@@ -285,31 +285,31 @@ QLabel#viewportVolumeOverlayTextLabel {
 
 QLabel#viewportVolumeOverlayValueLabel {
     background: transparent;
-    color: #ffb760;
+    color: #ff9d18;
     font-weight: 800;
     padding: 0;
 }
 
 QWidget#viewportVolumeOverlayMeterShell {
-    background: rgba(4, 7, 12, 0.34);
-    border: 1px solid rgba(255, 192, 112, 0.24);
+    background: rgba(7, 5, 4, 0.46);
+    border: 1px solid rgba(139, 82, 24, 0.72);
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterFill {
-    background: #ff9f2f;
+    background: #ff9d18;
     border: none;
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterBoostFill {
-    background: #ff7a00;
+    background: #ff5a00;
     border: none;
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterMarker {
-    background: rgba(255, 242, 223, 0.98);
+    background: #ffd58a;
     border: none;
     border-radius: 1px;
 }

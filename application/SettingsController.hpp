@@ -1,6 +1,5 @@
 #pragma once
 
-#include "domain/CustomCommand.hpp"
 #include "domain/PlayerProfile.hpp"
 
 #include <QObject>
@@ -191,8 +190,6 @@ public:
     void setSubtitlePreferredLanguages(const QString &languages);
     [[nodiscard]] double subtitleSyncSmallStep() const;
     void setSubtitleSyncSmallStep(double seconds);
-    [[nodiscard]] double subtitleSyncLargeStep() const;
-    void setSubtitleSyncLargeStep(double seconds);
     [[nodiscard]] QString subtitleDownloadCommand() const;
     void setSubtitleDownloadCommand(const QString &command);
     [[nodiscard]] int sceneBrowserStepSeconds() const;
@@ -203,8 +200,6 @@ public:
     void setScreenshotDirectory(const QString &directoryPath);
     [[nodiscard]] QString shortcutOverride(const QString &shortcutId) const;
     void setShortcutOverride(const QString &shortcutId, const QString &portableShortcut);
-    [[nodiscard]] QVector<revaplayer::domain::CustomCommand> customCommands() const;
-    bool setCustomCommands(const QVector<revaplayer::domain::CustomCommand> &commands);
     [[nodiscard]] QString customValue(const QString &key, const QString &defaultValue = {}) const;
     bool setCustomValue(const QString &key, const QString &value);
     bool removeCustomValue(const QString &key);
@@ -223,6 +218,7 @@ public:
                              bool fullscreen);
     void clearMainWindowState();
     bool resetApplicationData();
+    bool resetSettingsToDefaults();
     [[nodiscard]] QString databasePath() const;
 
 private:

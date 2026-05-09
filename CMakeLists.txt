@@ -46,8 +46,6 @@ add_executable(RevaPlayer
     application/HistoryController.hpp
     application/BookmarkController.cpp
     application/BookmarkController.hpp
-    application/CustomCommandScript.cpp
-    application/CustomCommandScript.hpp
     application/PlaybackDiagnosticsFormatter.cpp
     application/PlaybackDiagnosticsFormatter.hpp
     application/PlaybackTuning.cpp
@@ -70,7 +68,6 @@ add_executable(RevaPlayer
     application/SnapshotPath.hpp
     domain/Bookmark.hpp
     domain/ChapterInfo.hpp
-    domain/CustomCommand.hpp
     domain/MediaItem.hpp
     domain/PlaybackEndReason.hpp
     domain/PlaybackDiagnostics.hpp
@@ -150,8 +147,6 @@ if (BUILD_TESTING)
         tests/CoreTests.cpp
         application/BookmarkController.cpp
         application/BookmarkController.hpp
-        application/CustomCommandScript.cpp
-        application/CustomCommandScript.hpp
         application/PlaybackDiagnosticsFormatter.cpp
         application/PlaybackDiagnosticsFormatter.hpp
         application/HistoryController.cpp
@@ -171,7 +166,6 @@ if (BUILD_TESTING)
         application/SnapshotPath.cpp
         application/SnapshotPath.hpp
         domain/Bookmark.hpp
-        domain/CustomCommand.hpp
         domain/MediaItem.hpp
         domain/PlaybackEndReason.hpp
         domain/PlaybackDiagnostics.hpp

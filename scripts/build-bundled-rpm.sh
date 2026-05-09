@@ -451,7 +451,7 @@ write_spec_file() {
     cat >"${spec_path}" <<EOF
 Name:           ${PACKAGE_NAME}
 Version:        ${version}
-Release:        ${PACKAGE_RELEASE}%{?dist}
+Release:        ${PACKAGE_RELEASE}
 Summary:        Reva Player bundled offline RPM package
 License:        GPL-2.0-or-later
 URL:            https://github.com/moayad30/Reva_Player
@@ -652,7 +652,9 @@ cp -f "${PROJECT_ROOT}/README.md" "${package_root}/usr/share/doc/revaplayer/READ
 cp -f "${PROJECT_ROOT}/LICENSE" "${package_root}/usr/share/doc/revaplayer/LICENSE"
 cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"
 
-strip_elf_files "${bundle_root}"
+if [ "${REVAPLAYER_BUNDLE_STRIP:-0}" = "1" ]; then
+    strip_elf_files "${bundle_root}"
+fi
 verify_no_unresolved_elf_dependencies "${bundle_root}"
 normalize_package_permissions "${package_root}" "${bundle_root}"
 write_spec_file "${spec_path}" "${package_root}" "${version}"

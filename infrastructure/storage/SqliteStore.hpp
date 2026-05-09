@@ -1,7 +1,6 @@
 #pragma once
 
 #include "domain/Bookmark.hpp"
-#include "domain/CustomCommand.hpp"
 
 #include <QByteArray>
 #include <QString>
@@ -86,9 +85,8 @@ public:
                                                                                const QString &note,
                                                                                const QString &category) const;
     bool deleteBookmark(qint64 bookmarkId) const;
-    [[nodiscard]] QVector<revaplayer::domain::CustomCommand> loadCustomCommands() const;
-    bool replaceCustomCommands(const QVector<revaplayer::domain::CustomCommand> &commands);
     bool resetApplicationData() const;
+    bool resetSettingsOnly() const;
 
 private:
     bool ensureReady();

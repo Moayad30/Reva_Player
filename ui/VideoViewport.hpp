@@ -7,6 +7,7 @@ class MpvRenderHost;
 }
 
 class QLabel;
+class QEvent;
 class QMouseEvent;
 class QTimer;
 class QWheelEvent;
@@ -47,6 +48,7 @@ signals:
     void pointerLeft();
 
 protected:
+    void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;

@@ -1,6 +1,5 @@
 #include "application/PlaybackController.hpp"
 
-#include "application/CustomCommandScript.hpp"
 #include "infrastructure/mpv/MpvCore.hpp"
 
 namespace revaplayer::application {
@@ -77,25 +76,6 @@ void PlaybackController::stop()
 bool PlaybackController::executeMpvCommand(const QStringList &arguments)
 {
     return mpvCore_->executeCommand(arguments);
-}
-
-bool PlaybackController::executeCustomCommandScript(const QString &script, QString *errorMessage)
-{
-    const QVector<QStringList> commands = revaplayer::application::parseCustomCommandScript(script, errorMessage);
-    if (commands.isEmpty()) {
-        return false;
-    }
-
-    for (const QStringList &command : commands) {
-        if (!mpvCore_->executeCommand(command)) {
-            if (errorMessage != nullptr) {
-                *errorMessage = QStringLiteral("The custom command could not be sent to mpv.");
-            }
-            return false;
-        }
-    }
-
-    return true;
 }
 
 void PlaybackController::loadSubtitleFile(const QString &filePath)

@@ -49,11 +49,8 @@ FirstRunDialog::FirstRunDialog(revaplayer::application::SettingsController *sett
     formLayout_->addRow(themeLabel_, themeComboBox_);
     layout->addLayout(formLayout_);
 
-    dashboardCheckBox_ = new QCheckBox(this);
-    dashboardCheckBox_->setObjectName(QStringLiteral("firstRunDashboardCheckBox"));
     progressCheckBox_ = new QCheckBox(this);
     progressCheckBox_->setObjectName(QStringLiteral("firstRunProgressCheckBox"));
-    layout->addWidget(dashboardCheckBox_);
     layout->addWidget(progressCheckBox_);
 
     buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -79,9 +76,6 @@ FirstRunDialog::FirstRunDialog(revaplayer::application::SettingsController *sett
     const int themeIndex = themeComboBox_->findData(themeId);
     themeComboBox_->setCurrentIndex(themeIndex >= 0 ? themeIndex : 0);
 
-    dashboardCheckBox_->setChecked(
-        settingsController_ == nullptr
-        || settingsController_->customValue(QStringLiteral("ui/dashboard_show_on_idle"), QStringLiteral("1")) != QStringLiteral("0"));
     progressCheckBox_->setChecked(
         settingsController_ == nullptr
         || settingsController_->customValue(QStringLiteral("playlist/progress_mode_enabled"), QStringLiteral("1")) != QStringLiteral("0"));
@@ -105,12 +99,8 @@ void FirstRunDialog::applySelections()
     settingsController_->setInterfaceLanguage(selectedLanguageId());
     settingsController_->setUiTheme(themeComboBox_->currentData().toString());
     settingsController_->setCustomValue(QStringLiteral("ui/mode"), QStringLiteral("simple"));
-    settingsController_->setCustomValue(
-        QStringLiteral("ui/dashboard_enabled"),
-        dashboardCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
-    settingsController_->setCustomValue(
-        QStringLiteral("ui/dashboard_show_on_idle"),
-        dashboardCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
+    settingsController_->setCustomValue(QStringLiteral("ui/dashboard_enabled"), QStringLiteral("1"));
+    settingsController_->setCustomValue(QStringLiteral("ui/dashboard_show_on_idle"), QStringLiteral("1"));
     settingsController_->setCustomValue(
         QStringLiteral("playlist/progress_mode_enabled"),
         progressCheckBox_->isChecked() ? QStringLiteral("1") : QStringLiteral("0"));
@@ -133,7 +123,7 @@ void FirstRunDialog::applyRightAlignedPresentation()
         }
     }
 
-    for (QCheckBox *checkBox : {dashboardCheckBox_, progressCheckBox_}) {
+    for (QCheckBox *checkBox : {progressCheckBox_}) {
         if (checkBox != nullptr) {
             checkBox->setLayoutDirection(Qt::RightToLeft);
         }
@@ -186,7 +176,6 @@ void FirstRunDialog::refreshTexts()
     introLabel_->setText(uiText("Choose a starting setup. You can change everything later in Preferences."));
     languageLabel_->setText(uiText("Interface language"));
     themeLabel_->setText(uiText("Theme"));
-    dashboardCheckBox_->setText(uiText("Show the Home Dashboard when the player is idle"));
     progressCheckBox_->setText(uiText("Enable saved-list progress tracking in the playlist"));
 
     if (buttonBox_ != nullptr) {

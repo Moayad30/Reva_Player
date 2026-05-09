@@ -28,6 +28,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QActionGroup>
+#include <QAbstractSpinBox>
 #include <QAbstractAnimation>
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -60,12 +61,14 @@
 #include <QGroupBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QDir>
 #include <QFont>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QImage>
 #include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QJsonArray>
@@ -150,6 +153,93 @@ QPoint mouseEventGlobalPoint(const QMouseEvent *event)
 #else
     return event != nullptr ? event->globalPos() : QPoint {};
 #endif
+}
+
+std::optional<double> promptManualDelay(QWidget *parent,
+                                        const QString &title,
+                                        const QString &label,
+                                        const double currentSeconds)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle(title);
+    dialog.setModal(true);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(14, 14, 14, 14);
+    layout->setSpacing(10);
+
+    auto *labelWidget = new QLabel(label, &dialog);
+    labelWidget->setWordWrap(true);
+    layout->addWidget(labelWidget);
+
+    auto *slider = new QSlider(Qt::Horizontal, &dialog);
+    slider->setRange(-10000, 10000);
+    slider->setSingleStep(5);
+    slider->setPageStep(50);
+    layout->addWidget(slider);
+
+    auto *controlRow = new QWidget(&dialog);
+    auto *controlLayout = new QHBoxLayout(controlRow);
+    controlLayout->setContentsMargins(0, 0, 0, 0);
+    controlLayout->setSpacing(8);
+
+    auto *minusButton = new QPushButton(QStringLiteral("-"), controlRow);
+    auto *spinBox = new QDoubleSpinBox(controlRow);
+    auto *plusButton = new QPushButton(QStringLiteral("+"), controlRow);
+    auto *resetButton = new QPushButton(uiText("Reset"), controlRow);
+    spinBox->setRange(-3600.0, 3600.0);
+    spinBox->setDecimals(2);
+    spinBox->setSingleStep(0.05);
+    spinBox->setSuffix(QStringLiteral(" s"));
+    spinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spinBox->setValue(std::clamp(currentSeconds, -3600.0, 3600.0));
+    minusButton->setFixedWidth(38);
+    plusButton->setFixedWidth(38);
+    controlLayout->addWidget(minusButton, 0);
+    controlLayout->addWidget(spinBox, 1);
+    controlLayout->addWidget(plusButton, 0);
+    controlLayout->addWidget(resetButton, 0);
+    layout->addWidget(controlRow);
+
+    auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    if (QPushButton *okButton = buttonBox->button(QDialogButtonBox::Ok); okButton != nullptr) {
+        okButton->setText(uiText("Apply"));
+    }
+    if (QPushButton *cancelButton = buttonBox->button(QDialogButtonBox::Cancel); cancelButton != nullptr) {
+        cancelButton->setText(uiText("Cancel"));
+    }
+    layout->addWidget(buttonBox);
+
+    const auto syncSliderFromSpin = [slider, spinBox]() {
+        const int sliderValue = std::clamp(static_cast<int>(std::lround(spinBox->value() * 100.0)), slider->minimum(), slider->maximum());
+        const QSignalBlocker blocker(slider);
+        slider->setValue(sliderValue);
+    };
+    syncSliderFromSpin();
+
+    QObject::connect(slider, &QSlider::valueChanged, spinBox, [spinBox](const int value) {
+        const QSignalBlocker blocker(spinBox);
+        spinBox->setValue(value / 100.0);
+    });
+    QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), slider, [syncSliderFromSpin](const double) {
+        syncSliderFromSpin();
+    });
+    QObject::connect(minusButton, &QPushButton::clicked, spinBox, [spinBox]() {
+        spinBox->setValue(spinBox->value() - spinBox->singleStep());
+    });
+    QObject::connect(plusButton, &QPushButton::clicked, spinBox, [spinBox]() {
+        spinBox->setValue(spinBox->value() + spinBox->singleStep());
+    });
+    QObject::connect(resetButton, &QPushButton::clicked, spinBox, [spinBox]() {
+        spinBox->setValue(0.0);
+    });
+    QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return std::nullopt;
+    }
+    return spinBox->value();
 }
 
 class PlaylistFilterProxyModel final : public QSortFilterProxyModel {
@@ -2239,7 +2329,7 @@ public:
             if (fillWidth > 0) {
                 QRect fillRect = progressRect;
                 fillRect.setWidth(fillWidth);
-                painter->setBrush(completed ? QColor(QStringLiteral("#4dd28a")) : QColor(QStringLiteral("#7ba5ff")));
+                painter->setBrush(completed ? QColor(QStringLiteral("#4dd28a")) : accentColor);
                 painter->drawRoundedRect(fillRect, 2.5, 2.5);
             }
         }
@@ -2601,6 +2691,7 @@ constexpr double kLoopComparisonEpsilon = 0.01;
 constexpr int kDefaultThumbnailPopupWidth = 352;
 constexpr int kDefaultSceneStepSeconds = 30;
 constexpr int kMaxSceneItems = 24;
+constexpr int kSceneThumbnailImageRole = Qt::UserRole + 8;
 constexpr auto kPlaylistSnapshotPrefix = "playlist_snapshot/";
 constexpr auto kFileProfilePrefix = "media_profile/file/";
 constexpr auto kTypeProfilePrefix = "media_profile/type/";
@@ -2624,7 +2715,6 @@ constexpr auto kMediaScanCachePrefix = "media_scan/";
 constexpr auto kLayoutPresetPrefix = "layout_preset/";
 constexpr auto kGestureEnabledSetting = "input/gestures/enabled";
 constexpr auto kGestureThresholdSetting = "input/gestures/threshold";
-constexpr auto kScriptsDirectorySetting = "scripts/directory";
 constexpr auto kScreenshotFormatSetting = "capture/screenshot_format";
 constexpr auto kScreenshotTemplateSetting = "capture/screenshot_template";
 constexpr auto kPointerRightEdgeActionFullscreenSetting = "input/pointer/right_edge_action_fullscreen";
@@ -2738,6 +2828,7 @@ constexpr auto kWindowChromeUserDefinedSetting = "ui/window_chrome_user_defined_
 constexpr auto kLegacyControlBarShowPanelButtonsSetting = "ui/control_bar/show_panel_buttons";
 constexpr auto kVideoZoomStatePrefix = "video/zoom_state/";
 constexpr auto kSubtitleRememberedTrackPrefix = "subtitle/remembered_track/";
+constexpr auto kSubtitleRememberedDelayPrefix = "subtitle/remembered_delay/";
 constexpr int kPointerPanelSuppressionDelayMs = 480;
 constexpr double kVideoTransformEpsilon = 0.001;
 
@@ -2753,50 +2844,51 @@ struct ShortcutDefinition {
 
 QString shortcutCategoryForId(const QString &shortcutId)
 {
-    if (shortcutId.startsWith(QStringLiteral("open_"))
-        || shortcutId == QStringLiteral("close_application")
-        || shortcutId.startsWith(QStringLiteral("custom_command_slot_"))
-        || shortcutId == QStringLiteral("command_palette")
-        || shortcutId == QStringLiteral("show_scripts_panel")) {
+    const QString normalizedId = shortcutId.endsWith(QStringLiteral("_alt"))
+        ? shortcutId.left(shortcutId.size() - 4)
+        : shortcutId;
+
+    if (normalizedId.startsWith(QStringLiteral("open_"))
+        || normalizedId == QStringLiteral("close_application")) {
         return uiText("File / Tools");
     }
 
-    if (shortcutId.startsWith(QStringLiteral("subtitle_"))
-        || shortcutId == QStringLiteral("toggle_subtitle_visibility")
-        || shortcutId == QStringLiteral("load_subtitle")) {
+    if (normalizedId.startsWith(QStringLiteral("subtitle_"))
+        || normalizedId == QStringLiteral("toggle_subtitle_visibility")
+        || normalizedId == QStringLiteral("load_subtitle")) {
         return uiText("Subtitles");
     }
 
-    if (shortcutId.startsWith(QStringLiteral("audio_"))
-        || shortcutId == QStringLiteral("volume_down")
-        || shortcutId == QStringLiteral("volume_up")
-        || shortcutId == QStringLiteral("toggle_mute")) {
+    if (normalizedId.startsWith(QStringLiteral("audio_"))
+        || normalizedId == QStringLiteral("volume_down")
+        || normalizedId == QStringLiteral("volume_up")
+        || normalizedId == QStringLiteral("toggle_mute")) {
         return uiText("Audio");
     }
 
-    if (shortcutId.startsWith(QStringLiteral("aspect_"))
-        || shortcutId.startsWith(QStringLiteral("crop_"))
-        || shortcutId.startsWith(QStringLiteral("rotate_"))
-        || shortcutId.startsWith(QStringLiteral("video_zoom_"))
-        || shortcutId.startsWith(QStringLiteral("video_pan_"))
-        || shortcutId == QStringLiteral("toggle_deinterlace")) {
+    if (normalizedId.startsWith(QStringLiteral("aspect_"))
+        || normalizedId.startsWith(QStringLiteral("crop_"))
+        || normalizedId.startsWith(QStringLiteral("rotate_"))
+        || normalizedId.startsWith(QStringLiteral("video_zoom_"))
+        || normalizedId.startsWith(QStringLiteral("video_pan_"))
+        || normalizedId == QStringLiteral("toggle_deinterlace")) {
         return uiText("Video");
     }
 
-    if (shortcutId.startsWith(QStringLiteral("toggle_"))
-        || shortcutId.startsWith(QStringLiteral("previous_"))
-        || shortcutId.startsWith(QStringLiteral("next_"))
-        || shortcutId == QStringLiteral("favorite_current_media")
-        || shortcutId.startsWith(QStringLiteral("seek_"))
-        || shortcutId == QStringLiteral("play_pause")
-        || shortcutId == QStringLiteral("stop")
-        || shortcutId.startsWith(QStringLiteral("speed_"))
-        || shortcutId == QStringLiteral("take_screenshot")
-        || shortcutId == QStringLiteral("add_bookmark")
-        || shortcutId == QStringLiteral("delete_bookmark")
-        || shortcutId.startsWith(QStringLiteral("set_loop_"))
-        || shortcutId == QStringLiteral("clear_loop")
-        || shortcutId.startsWith(QStringLiteral("frame_step_"))) {
+    if (normalizedId.startsWith(QStringLiteral("toggle_"))
+        || normalizedId.startsWith(QStringLiteral("previous_"))
+        || normalizedId.startsWith(QStringLiteral("next_"))
+        || normalizedId == QStringLiteral("favorite_current_media")
+        || normalizedId.startsWith(QStringLiteral("seek_"))
+        || normalizedId == QStringLiteral("play_pause")
+        || normalizedId == QStringLiteral("stop")
+        || normalizedId.startsWith(QStringLiteral("speed_"))
+        || normalizedId == QStringLiteral("take_screenshot")
+        || normalizedId == QStringLiteral("add_bookmark")
+        || normalizedId == QStringLiteral("delete_bookmark")
+        || normalizedId.startsWith(QStringLiteral("set_loop_"))
+        || normalizedId == QStringLiteral("clear_loop")
+        || normalizedId.startsWith(QStringLiteral("frame_step_"))) {
         return uiText("Playback");
     }
 
@@ -2811,20 +2903,14 @@ constexpr ShortcutDefinition kShortcutDefinitions[] {
     {"toggle_subtitle_visibility", "Toggle Subtitle Visibility", "S"},
     {"subtitle_scale_down", "Decrease Subtitle Scale", "Ctrl+Alt+Down"},
     {"subtitle_scale_up", "Increase Subtitle Scale", "Ctrl+Alt+Up"},
-    {"subtitle_scale_reset", "Reset Subtitle Scale", ""},
+    {"subtitle_scale_reset", "Reset Subtitle Scale", "Ctrl+Alt+0"},
     {"subtitle_position_up", "Move Subtitles Up", "Alt+PageUp"},
     {"subtitle_position_down", "Move Subtitles Down", "Alt+PageDown"},
-    {"subtitle_position_reset", "Reset Subtitle Position", ""},
-    {"subtitle_style_cycle", "Cycle Subtitle Style Override", ""},
+    {"subtitle_position_reset", "Reset Subtitle Position", "Alt+Home"},
+    {"subtitle_style_cycle", "Cycle Subtitle Style Override", "Alt+S"},
     {"show_media_info", "Show Media Info", "Ctrl+I"},
     {"open_preferences", "Open Preferences", "Ctrl+,"},
     {"close_application", "Exit", "Ctrl+Q"},
-    {"reset_window_layout", "Reset Window Layout", "Ctrl+Shift+R"},
-    {"custom_command_slot_1", "Run Custom Command Slot 1", ""},
-    {"custom_command_slot_2", "Run Custom Command Slot 2", ""},
-    {"custom_command_slot_3", "Run Custom Command Slot 3", ""},
-    {"custom_command_slot_4", "Run Custom Command Slot 4", ""},
-    {"custom_command_slot_5", "Run Custom Command Slot 5", ""},
     {"play_pause", "Play / Pause", "Space"},
     {"stop", "Stop", "Ctrl+."},
     {"take_screenshot", "Take Screenshot", "Ctrl+Shift+S"},
@@ -2833,11 +2919,11 @@ constexpr ShortcutDefinition kShortcutDefinitions[] {
     {"speed_down", "Decrease Playback Speed", "["},
     {"speed_up", "Increase Playback Speed", "]"},
     {"speed_reset", "Reset Playback Speed", "\\"},
-    {"subtitle_delay_down", "Subtitle Delay -0.25s", "Ctrl+["},
-    {"subtitle_delay_up", "Subtitle Delay +0.25s", "Ctrl+]"},
+    {"subtitle_delay_down", "Subtitle Delay Decrease", "Ctrl+["},
+    {"subtitle_delay_up", "Subtitle Delay Increase", "Ctrl+]"},
     {"subtitle_delay_reset", "Reset Subtitle Delay", "Ctrl+\\"},
-    {"audio_delay_down", "Audio Delay -0.10s", "Alt+["},
-    {"audio_delay_up", "Audio Delay +0.10s", "Alt+]"},
+    {"audio_delay_down", "Audio Delay Down", "Alt+["},
+    {"audio_delay_up", "Audio Delay Up", "Alt+]"},
     {"audio_delay_reset", "Reset Audio Delay", "Alt+\\"},
     {"set_loop_start", "Set Loop Start", "A"},
     {"set_loop_end", "Set Loop End", "B"},
@@ -2868,23 +2954,60 @@ constexpr ShortcutDefinition kShortcutDefinitions[] {
     {"video_pan_up", "Pan Up", "Ctrl+Shift+Up"},
     {"video_pan_down", "Pan Down", "Ctrl+Shift+Down"},
     {"toggle_deinterlace", "Toggle Deinterlace", "Ctrl+D"},
-    {"aspect_default", "Aspect Ratio Default", ""},
-    {"aspect_16_9", "Aspect Ratio 16:9", ""},
-    {"aspect_4_3", "Aspect Ratio 4:3", ""},
-    {"aspect_1_85", "Aspect Ratio 1.85:1", ""},
-    {"aspect_2_35", "Aspect Ratio 2.35:1", ""},
-    {"crop_default", "Crop Default / Container", ""},
-    {"crop_16_9", "Crop 16:9", ""},
-    {"crop_1_85", "Crop 1.85:1", ""},
-    {"crop_2_35", "Crop 2.35:1", ""},
-    {"crop_disable", "Disable Crop", ""},
-    {"rotate_default", "Rotation 0°", ""},
-    {"rotate_90", "Rotation 90°", ""},
-    {"rotate_180", "Rotation 180°", ""},
-    {"rotate_270", "Rotation 270°", ""},
-    {"command_palette", "Open Command Palette", "Ctrl+K"},
+    {"aspect_default", "Aspect Ratio Default", "Ctrl+Alt+1"},
+    {"aspect_16_9", "Aspect Ratio 16:9", "Ctrl+Alt+2"},
+    {"aspect_4_3", "Aspect Ratio 4:3", "Ctrl+Alt+3"},
+    {"aspect_1_85", "Aspect Ratio 1.85:1", "Ctrl+Alt+4"},
+    {"aspect_2_35", "Aspect Ratio 2.35:1", "Ctrl+Alt+5"},
+    {"crop_default", "Crop Default / Container", "Ctrl+Shift+1"},
+    {"crop_16_9", "Crop 16:9", "Ctrl+Shift+2"},
+    {"crop_1_85", "Crop 1.85:1", "Ctrl+Shift+3"},
+    {"crop_2_35", "Crop 2.35:1", "Ctrl+Shift+4"},
+    {"crop_disable", "Disable Crop", "Ctrl+Shift+0"},
+    {"rotate_default", "Rotation 0°", "Ctrl+R"},
+    {"rotate_90", "Rotation 90°", "Ctrl+Alt+R"},
+    {"rotate_180", "Rotation 180°", "Ctrl+Alt+Shift+R"},
+    {"rotate_270", "Rotation 270°", "Ctrl+Alt+G"},
     {"favorite_current_media", "Toggle Favorite Current Media", "Ctrl+Shift+F"},
-    {"show_scripts_panel", "Show Scripts Panel", ""},
+    {"play_pause_alt", "Play / Pause (Alt Binding)", ""},
+    {"stop_alt", "Stop (Alt Binding)", ""},
+    {"toggle_fullscreen_alt", "Toggle Fullscreen (Alt Binding)", ""},
+    {"toggle_playlist_alt", "Toggle Playlist Panel (Alt Binding)", ""},
+    {"toggle_details_alt", "Toggle Details Panel (Alt Binding)", ""},
+    {"seek_backward_short_alt", "Seek Backward Short (Alt Binding)", ""},
+    {"seek_forward_short_alt", "Seek Forward Short (Alt Binding)", ""},
+    {"seek_backward_long_alt", "Seek Backward Long (Alt Binding)", ""},
+    {"seek_forward_long_alt", "Seek Forward Long (Alt Binding)", ""},
+    {"volume_down_alt", "Volume Down (Alt Binding)", ""},
+    {"volume_up_alt", "Volume Up (Alt Binding)", ""},
+    {"toggle_mute_alt", "Toggle Mute (Alt Binding)", ""},
+    {"speed_down_alt", "Decrease Speed (Alt Binding)", ""},
+    {"speed_up_alt", "Increase Speed (Alt Binding)", ""},
+    {"speed_reset_alt", "Reset Speed (Alt Binding)", ""},
+    {"subtitle_delay_down_alt", "Subtitle Delay Down (Alt Binding)", ""},
+    {"subtitle_delay_up_alt", "Subtitle Delay Up (Alt Binding)", ""},
+    {"subtitle_delay_reset_alt", "Subtitle Delay Reset (Alt Binding)", ""},
+    {"audio_delay_down_alt", "Audio Delay Down (Alt Binding)", ""},
+    {"audio_delay_up_alt", "Audio Delay Up (Alt Binding)", ""},
+    {"audio_delay_reset_alt", "Audio Delay Reset (Alt Binding)", ""},
+    {"subtitle_scale_down_alt", "Subtitle Scale Down (Alt Binding)", ""},
+    {"subtitle_scale_up_alt", "Subtitle Scale Up (Alt Binding)", ""},
+    {"subtitle_position_up_alt", "Subtitle Position Up (Alt Binding)", ""},
+    {"subtitle_position_down_alt", "Subtitle Position Down (Alt Binding)", ""},
+    {"video_zoom_out_alt", "Video Zoom Out (Alt Binding)", ""},
+    {"video_zoom_in_alt", "Video Zoom In (Alt Binding)", ""},
+    {"video_zoom_reset_alt", "Video Zoom Reset (Alt Binding)", ""},
+    {"previous_playlist_alt", "Previous Playlist Item (Alt Binding)", ""},
+    {"next_playlist_alt", "Next Playlist Item (Alt Binding)", ""},
+    {"previous_chapter_alt", "Previous Chapter (Alt Binding)", ""},
+    {"next_chapter_alt", "Next Chapter (Alt Binding)", ""},
+    {"add_bookmark_alt", "Add Bookmark (Alt Binding)", ""},
+    {"take_screenshot_alt", "Take Screenshot (Alt Binding)", ""},
+    {"open_preferences_alt", "Open Preferences (Alt Binding)", ""},
+    {"show_media_info_alt", "Show Media Info (Alt Binding)", ""},
+    {"open_file_alt", "Open File (Alt Binding)", ""},
+    {"open_folder_alt", "Open Folder (Alt Binding)", ""},
+    {"open_url_alt", "Open URL (Alt Binding)", ""},
 };
 
 QKeySequence portableShortcut(const char *portableText)
@@ -3381,6 +3504,35 @@ QString rememberedSubtitleTrackStorageKeyForSource(const QString &source)
     return trimmed.isEmpty()
         ? QString {}
         : QStringLiteral("%1%2").arg(QString::fromLatin1(kSubtitleRememberedTrackPrefix), encodeSettingKeySegment(trimmed));
+}
+
+QString rememberedSubtitleDelayStorageKeyForSource(const QString &source)
+{
+    const QString trimmed = source.trimmed();
+    return trimmed.isEmpty()
+        ? QString {}
+        : QStringLiteral("%1%2").arg(QString::fromLatin1(kSubtitleRememberedDelayPrefix), encodeSettingKeySegment(trimmed));
+}
+
+QString subtitleDelayDisplayText(const double delaySeconds)
+{
+    QString signedValue = QString::number(delaySeconds, 'f', 2);
+    if (std::abs(delaySeconds) < 0.0005) {
+        signedValue = QStringLiteral("0");
+    } else if (delaySeconds > 0.0) {
+        signedValue.prepend(QChar('+'));
+    }
+    while (signedValue.endsWith(QStringLiteral("0"))) {
+        signedValue.chop(1);
+    }
+    if (signedValue.endsWith(QStringLiteral("."))) {
+        signedValue.chop(1);
+    }
+    if (signedValue == QStringLiteral("-0")) {
+        signedValue = QStringLiteral("0");
+    }
+    const bool arabicUi = revaplayer::application::currentUiLanguage() == QStringLiteral("ar");
+    return signedValue + (arabicUi ? QStringLiteral("ث") : QStringLiteral("s"));
 }
 
 QString subtitleTrackChoiceSignature(const revaplayer::domain::TrackInfo &track)
@@ -4412,6 +4564,15 @@ QColor accentColorForId(const QString &accentId)
     if (normalized == QStringLiteral("rose")) {
         return QColor(QStringLiteral("#ef6f92"));
     }
+    if (normalized == QStringLiteral("red")) {
+        return QColor(QStringLiteral("#ef4444"));
+    }
+    if (normalized == QStringLiteral("purple")) {
+        return QColor(QStringLiteral("#a78bfa"));
+    }
+    if (normalized == QStringLiteral("orange")) {
+        return QColor(QStringLiteral("#ff7a1a"));
+    }
     if (normalized == QStringLiteral("graphite")) {
         return QColor(QStringLiteral("#9aa7bc"));
     }
@@ -4523,7 +4684,6 @@ QStringList defaultVisibleDetailsTabIds()
         QStringLiteral("favorites"),
         QStringLiteral("scenes"),
         QStringLiteral("media_lab"),
-        QStringLiteral("scripts"),
     };
 }
 
@@ -5645,51 +5805,6 @@ bool manageSavedFoldersDialog(QWidget *parent,
     return true;
 }
 
-QString scriptsDirectoryPath(const revaplayer::application::SettingsController *settingsController)
-{
-    const QString configured = customSettingValue(settingsController, kScriptsDirectorySetting).trimmed();
-    if (!configured.isEmpty()) {
-        return configured;
-    }
-
-    const QString appDataDirectory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    return appDataDirectory.trimmed().isEmpty()
-        ? QDir::home().filePath(QStringLiteral(".revaplayer/scripts"))
-        : QDir(appDataDirectory).filePath(QStringLiteral("scripts-panel"));
-}
-
-struct PanelScript final {
-    QString path;
-    QString name;
-    QString description;
-    QString script;
-};
-
-bool loadPanelScript(const QString &path, PanelScript *outScript)
-{
-    if (outScript == nullptr) {
-        return false;
-    }
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return false;
-    }
-
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-    const QString script = root.value(QStringLiteral("script")).toString();
-    const QString name = root.value(QStringLiteral("name")).toString().trimmed();
-    if (script.trimmed().isEmpty()) {
-        return false;
-    }
-
-    outScript->path = path;
-    outScript->name = name.isEmpty() ? QFileInfo(path).completeBaseName() : name;
-    outScript->description = root.value(QStringLiteral("description")).toString().trimmed();
-    outScript->script = script;
-    return true;
-}
-
 QString screenshotFormat(const revaplayer::application::SettingsController *settingsController)
 {
     const QString raw = customSettingValue(settingsController, kScreenshotFormatSetting, QStringLiteral("png")).trimmed().toLower();
@@ -5751,12 +5866,27 @@ bool isSupportedSubtitleFile(const QFileInfo &fileInfo)
 {
     static const QSet<QString> kSubtitleExtensions {
         QStringLiteral("ass"),
+        QStringLiteral("dfxp"),
         QStringLiteral("idx"),
+        QStringLiteral("lrc"),
+        QStringLiteral("microdvd"),
+        QStringLiteral("mpl"),
+        QStringLiteral("mpl2"),
+        QStringLiteral("pgs"),
+        QStringLiteral("rt"),
+        QStringLiteral("sami"),
+        QStringLiteral("sbv"),
+        QStringLiteral("scc"),
+        QStringLiteral("smi"),
         QStringLiteral("srt"),
         QStringLiteral("ssa"),
         QStringLiteral("sub"),
         QStringLiteral("sup"),
+        QStringLiteral("ttml"),
+        QStringLiteral("txt"),
+        QStringLiteral("usf"),
         QStringLiteral("vtt"),
+        QStringLiteral("webvtt"),
     };
 
     return fileInfo.exists()
@@ -6099,6 +6229,43 @@ int subtitleFileScore(const QFileInfo &fileInfo,
     return score;
 }
 
+bool subtitleMatchesSameNameOnly(const QFileInfo &fileInfo, const QString &baseName)
+{
+    return fileInfo.completeBaseName().trimmed().compare(baseName.trimmed(), Qt::CaseInsensitive) == 0;
+}
+
+bool subtitleMatchesSameNameWithLanguageSuffix(const QFileInfo &fileInfo, const QString &baseName)
+{
+    const QString lowerName = fileInfo.completeBaseName().trimmed().toLower();
+    const QString base = baseName.trimmed().toLower();
+    if (lowerName == base) {
+        return true;
+    }
+
+    auto startsWithDelimiter = [&lowerName, &base](const QChar delimiter) {
+        return lowerName.startsWith(base + delimiter);
+    };
+    if (!startsWithDelimiter(QChar('.')) && !startsWithDelimiter(QChar('_'))) {
+        return false;
+    }
+
+    const QString suffix = lowerName.mid(base.size() + 1);
+    if (suffix.isEmpty()) {
+        return false;
+    }
+
+    const QString firstToken = suffix.split(QRegularExpression(QStringLiteral("[._-]")), Qt::SkipEmptyParts).value(0).trimmed();
+    if (firstToken.size() < 2 || firstToken.size() > 8) {
+        return false;
+    }
+    for (const QChar character : firstToken) {
+        if (!character.isLetterOrNumber()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 QString jsonString(const QJsonObject &object, const QString &key, const QString &fallback = {})
 {
     const QString value = object.value(key).toString().trimmed();
@@ -6183,8 +6350,6 @@ MainWindow::MainWindow(revaplayer::application::BookmarkController *bookmarkCont
     setupMenuBar();
     setupDockWidgets();
     setupPlaybackActions();
-    customCommands_ = settingsController_ != nullptr ? settingsController_->customCommands() : QVector<revaplayer::domain::CustomCommand> {};
-    rebuildCustomCommandsMenu();
     applyShortcutPreferences();
     applyPlaybackProfile();
     setRepeatMode(configuredRepeatMode(), false);
@@ -6242,6 +6407,18 @@ void MainWindow::changeEvent(QEvent *event)
             fullscreenTransitionActive_ = false;
             suppressVideoOverlayUpdates_ = false;
             updateVideoOverlayGeometry();
+            if (isFullScreen()) {
+                QTimer::singleShot(90, this, [this]() {
+                    if (isFullScreen()) {
+                        updateVideoOverlayGeometry();
+                    }
+                });
+                QTimer::singleShot(180, this, [this]() {
+                    if (isFullScreen()) {
+                        updateVideoOverlayGeometry();
+                    }
+                });
+            }
             if (pendingPlaylistMetadataRefresh_) {
                 pendingPlaylistMetadataRefresh_ = false;
                 schedulePlaylistMetadataRefresh(120);
@@ -6440,6 +6617,15 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event != nullptr
         && event->modifiers() == Qt::NoModifier
+        && event->key() == Qt::Key_Escape
+        && isFullScreen()) {
+        toggleFullscreen();
+        event->accept();
+        return;
+    }
+
+    if (event != nullptr
+        && event->modifiers() == Qt::NoModifier
         && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
         QWidget *focus = QApplication::focusWidget();
         const bool textInputFocused = focus != nullptr
@@ -6469,7 +6655,7 @@ void MainWindow::openFiles()
         }
     }
 
-    const QStringList files = filedialog::getOpenFileNames(
+    const QStringList files = filedialog::getOpenMediaFileNames(
         this,
         uiText("Open Media"),
         initialDirectory,
@@ -6555,7 +6741,7 @@ void MainWindow::loadSubtitleFile()
         this,
         uiText("Load Subtitle File"),
         initialDirectory,
-        uiText("Subtitle Files (*.srt *.ass *.ssa *.sub *.vtt *.sup *.idx);;All Files (*)"));
+        uiText("Subtitle Files (*.srt *.ass *.ssa *.sub *.idx *.vtt *.webvtt *.ttml *.dfxp *.smi *.sami *.mpl *.mpl2 *.txt *.lrc *.pgs *.sup *.usf *.rt *.sbv *.scc);;All Files (*)"));
 
     if (subtitlePath.trimmed().isEmpty()) {
         return;
@@ -6914,6 +7100,9 @@ void MainWindow::showSettingsDialog()
                                                                              const QString &assOverride) {
         applySubtitlePreviewState(visible, scale, position, fontFamily, fontSize, assOverride, false);
     });
+    connect(&dialog, &SettingsDialog::loadSubtitleFileRequested, this, [this]() {
+        loadSubtitleFile();
+    });
     connect(&dialog, &SettingsDialog::clearCacheRequested, this, [this]() {
         clearApplicationCache();
     });
@@ -6927,10 +7116,8 @@ void MainWindow::showSettingsDialog()
             : revaplayer::application::defaultUiLanguageId();
         revaplayer::application::setCurrentUiLanguage(appliedLanguage);
         QApplication::setLayoutDirection(revaplayer::application::currentUiLanguageDirection());
-        QLocale::setDefault(QLocale(appliedLanguage));
+        QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
         applySelectedTheme(false);
-        customCommands_ = settingsController_ != nullptr ? settingsController_->customCommands() : QVector<revaplayer::domain::CustomCommand> {};
-        rebuildCustomCommandsMenu();
         applyShortcutPreferences();
         if (settingsController_ != nullptr && !settingsController_->rememberWindowState()) {
             settingsController_->clearMainWindowState();
@@ -7012,7 +7199,6 @@ void MainWindow::showViewportContextMenu(const QPoint &position)
     playbackMenu->addSeparator();
     playbackMenu->addAction(frameStepBackwardAction_);
     playbackMenu->addAction(frameStepForwardAction_);
-    playbackMenu->addAction(alwaysOnTopAction_);
 
     auto *subtitleMenu = menu.addMenu(uiText("Subtitles"));
     subtitleMenu->addAction(toggleSubtitleVisibilityAction_);
@@ -7020,6 +7206,7 @@ void MainWindow::showViewportContextMenu(const QPoint &position)
     subtitleMenu->addSeparator();
     subtitleMenu->addAction(subtitleDelayDownAction_);
     subtitleMenu->addAction(subtitleDelayUpAction_);
+    subtitleMenu->addAction(subtitleDelayManualAction_);
     subtitleMenu->addAction(subtitleDelayResetAction_);
     auto *subtitleScaleMenu = subtitleMenu->addMenu(uiText("Scale"));
     subtitleScaleMenu->addAction(subtitleScaleDownAction_);
@@ -7043,6 +7230,7 @@ void MainWindow::showViewportContextMenu(const QPoint &position)
     audioMenu->addSeparator();
     audioMenu->addAction(audioDelayDownAction_);
     audioMenu->addAction(audioDelayUpAction_);
+    audioMenu->addAction(audioDelayManualAction_);
     audioMenu->addAction(audioDelayResetAction_);
 
     if (profileMenu_ != nullptr) {
@@ -7100,10 +7288,6 @@ void MainWindow::showViewportContextMenu(const QPoint &position)
     windowMenu->addAction(toggleFullscreenAction_);
 
     auto *toolsMenu = menu.addMenu(uiText("Tools"));
-    if (customCommandsMenu_ != nullptr && !customCommands_.isEmpty()) {
-        toolsMenu->addMenu(customCommandsMenu_);
-        toolsMenu->addSeparator();
-    }
     toolsMenu->addAction(showMediaInfoAction_);
     toolsMenu->addAction(preferencesAction_);
     forceMenuLeftToRight(&menu);
@@ -8510,6 +8694,7 @@ void MainWindow::onFileLoaded()
     applyStoredMediaProfiles();
     applyConfiguredZoomStateForCurrentMedia();
     applyAdvancedSubtitlePreferences();
+    applyRememberedSubtitleDelayForCurrentMedia();
     reloadHistoryPanel();
     refreshSceneBrowserPrompt(false);
     populateSecondarySubtitleOptions();
@@ -8675,13 +8860,22 @@ void MainWindow::onPlaylistChanged(const QVector<revaplayer::domain::PlaylistEnt
         }
         currentPositionSeconds_ = 0.0;
         currentDurationSeconds_ = 0.0;
+        currentSubtitleDelaySeconds_ = 0.0;
         loopStartSeconds_ = -1.0;
         loopEndSeconds_ = -1.0;
         lastPersistedPositionSeconds_ = -1.0;
         resumeAttemptedForCurrentMedia_ = false;
         localSubtitlesAutoLoadedForCurrentMedia_ = false;
+        if (subtitleDelayCustomSpinBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleDelayCustomSpinBox_);
+            subtitleDelayCustomSpinBox_->setValue(0.0);
+        }
+        if (subtitleRememberDelayForMediaCheckBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleRememberDelayForMediaCheckBox_);
+            subtitleRememberDelayForMediaCheckBox_->setChecked(false);
+        }
         reloadBookmarks();
-        clearSceneBrowser(QStringLiteral("Preparing scene browser..."));
+        clearSceneBrowser(QStringLiteral("Preparing scene browser"));
     }
     if (mediaLoaded_
         && !loadingMedia_
@@ -8794,6 +8988,17 @@ void MainWindow::onPreviewRequested(const double timeSeconds, const QPoint &glob
         return;
     }
 
+    if (videoViewport_ != nullptr) {
+        const int viewportWidth = std::max(1, videoViewport_->width());
+        const int viewportHeight = std::max(1, videoViewport_->height());
+        const int requestedWidth = std::max(224, thumbnailPopupWidth() > 0 ? thumbnailPopupWidth() : kDefaultThumbnailPopupWidth);
+        const int requestedHeight = std::max(90, static_cast<int>(std::lround(requestedWidth * 9.0 / 16.0)));
+        if (requestedWidth >= viewportWidth || requestedHeight >= viewportHeight) {
+            onPreviewHidden();
+            return;
+        }
+    }
+
     if (!isVisible() || isMinimized()) {
         onPreviewHidden();
         return;
@@ -8831,7 +9036,7 @@ void MainWindow::onPreviewRequested(const double timeSeconds, const QPoint &glob
         return;
     }
 
-    hoverPreviewPopup_->showStatus(uiText("Loading preview..."), timeText, previewHoverAnchor_);
+    hoverPreviewPopup_->showStatus(uiText("Loading preview"), timeText, previewHoverAnchor_);
     if (previewRequestTimer_ != nullptr) {
         previewRequestTimer_->start();
     }
@@ -8864,6 +9069,11 @@ void MainWindow::onThumbnailReady(const QString &source, const qint64 bucketMill
         || source != previewHoverSource_
         || bucketMilliseconds != previewHoverBucketMilliseconds_) {
     } else {
+        if (videoViewport_ != nullptr
+            && (image.width() >= videoViewport_->width() || image.height() >= videoViewport_->height())) {
+            onPreviewHidden();
+            return;
+        }
         if (previewStatusTimer_ != nullptr) {
             previewStatusTimer_->stop();
         }
@@ -8897,6 +9107,7 @@ void MainWindow::onThumbnailReady(const QString &source, const qint64 bucketMill
         if (item != nullptr) {
             item->setIcon(QIcon(QPixmap::fromImage(image)));
             item->setData(Qt::UserRole + 2, 1);
+            item->setData(kSceneThumbnailImageRole, image);
         }
         requestNextSceneThumbnail();
     }
@@ -9223,25 +9434,65 @@ void MainWindow::setupMenuBar()
     menuBar()->setNativeMenuBar(false);
 
     auto *fileMenu = menuBar()->addMenu(uiText("&File"));
-    openFileAction_ = fileMenu->addAction(uiText("Open File..."));
+    openFileAction_ = fileMenu->addAction(uiText("Open File"));
     openFileAction_->setShortcut(QKeySequence::Open);
     connect(openFileAction_, &QAction::triggered, this, &MainWindow::openFiles);
 
-    openFolderAction_ = fileMenu->addAction(uiText("Open Folder..."));
+    openFolderAction_ = fileMenu->addAction(uiText("Open Folder"));
     openFolderAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
     openFolderAction_->setShortcutContext(Qt::ApplicationShortcut);
     connect(openFolderAction_, &QAction::triggered, this, &MainWindow::openFolder);
 
-    openUrlAction_ = fileMenu->addAction(uiText("Open URL..."));
+    openUrlAction_ = fileMenu->addAction(uiText("Open URL"));
     openUrlAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
     connect(openUrlAction_, &QAction::triggered, this, &MainWindow::openUrl);
 
+    auto *openRecentMenu = fileMenu->addMenu(uiText("Open Recent"));
+    connect(openRecentMenu, &QMenu::aboutToShow, this, [this, openRecentMenu]() {
+        openRecentMenu->clear();
+        if (historyController_ == nullptr || !historyController_->isReady() || !historyEnabled()) {
+            QAction *placeholder = openRecentMenu->addAction(uiText("No recent media yet"));
+            placeholder->setEnabled(false);
+            return;
+        }
+
+        const auto entries = historyController_->recentHistory(10);
+        if (entries.isEmpty()) {
+            QAction *placeholder = openRecentMenu->addAction(uiText("No recent media yet"));
+            placeholder->setEnabled(false);
+            return;
+        }
+
+        for (const auto &entry : entries) {
+            const QString source = entry.source.trimmed();
+            if (source.isEmpty()) {
+                continue;
+            }
+            QAction *action = openRecentMenu->addAction(displayTitleForHistory(source, entry.title));
+            action->setToolTip(source);
+            connect(action, &QAction::triggered, this, [this, source]() {
+                if (!openMediaSource(source)) {
+                    if (historyController_ != nullptr && historyController_->isReady()) {
+                        historyController_->removeHistoryEntry(source);
+                    }
+                    reloadHistoryPanel();
+                    statusBar()->showMessage(uiText("That recent item is no longer available and was removed from History."), 5000);
+                }
+            });
+        }
+
+        if (openRecentMenu->actions().isEmpty()) {
+            QAction *placeholder = openRecentMenu->addAction(uiText("No recent media yet"));
+            placeholder->setEnabled(false);
+        }
+    });
+
     fileMenu->addSeparator();
     auto *specialSourceMenu = fileMenu->addMenu(uiText("Open Special Source"));
-    QAction *openDvdAction = specialSourceMenu->addAction(uiText("DVD / ISO..."));
-    QAction *openBluRayAction = specialSourceMenu->addAction(uiText("Blu-ray..."));
-    QAction *openDvbAction = specialSourceMenu->addAction(uiText("DVB / Broadcast..."));
-    QAction *openLiveCaptureAction = specialSourceMenu->addAction(uiText("Live Capture..."));
+    QAction *openDvdAction = specialSourceMenu->addAction(uiText("DVD / ISO"));
+    QAction *openBluRayAction = specialSourceMenu->addAction(uiText("Blu-ray"));
+    QAction *openDvbAction = specialSourceMenu->addAction(uiText("DVB / Broadcast"));
+    QAction *openLiveCaptureAction = specialSourceMenu->addAction(uiText("Live Capture"));
     connect(openDvdAction, &QAction::triggered, this, [this]() {
         showSpecialSourceDialog(
             uiText("Open DVD Source"),
@@ -9268,22 +9519,16 @@ void MainWindow::setupMenuBar()
     });
 
     fileMenu->addSeparator();
-    loadSubtitleAction_ = fileMenu->addAction(uiText("Load Subtitle File..."));
-    showMediaInfoAction_ = fileMenu->addAction(uiText("Media Info..."));
+    loadSubtitleAction_ = fileMenu->addAction(uiText("Load Subtitle File"));
+    showMediaInfoAction_ = fileMenu->addAction(uiText("Media Info"));
 
     fileMenu->addSeparator();
     takeScreenshotAction_ = fileMenu->addAction(uiText("Take Screenshot"));
     takeScreenshotAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
 
-    fileMenu->addSeparator();
-    preferencesAction_ = fileMenu->addAction(uiText("Preferences..."));
+    preferencesAction_ = new QAction(uiText("Preferences"), this);
     preferencesAction_->setShortcut(QKeySequence::Preferences);
     connect(preferencesAction_, &QAction::triggered, this, &MainWindow::showSettingsDialog);
-
-    fileMenu->addSeparator();
-    auto *maintenanceMenu = fileMenu->addMenu(uiText("Maintenance"));
-    QAction *clearCacheAction = maintenanceMenu->addAction(uiText("Clear Cache..."));
-    connect(clearCacheAction, &QAction::triggered, this, &MainWindow::clearApplicationCache);
 
     fileMenu->addSeparator();
     closeApplicationAction_ = fileMenu->addAction(uiText("Exit"));
@@ -9318,12 +9563,6 @@ void MainWindow::setupMenuBar()
     addProfileAction(profileMenu_, revaplayer::domain::PlayerProfile::Battery);
     addProfileAction(profileMenu_, revaplayer::domain::PlayerProfile::Balanced);
     addProfileAction(profileMenu_, revaplayer::domain::PlayerProfile::Quality);
-
-    auto *helpMenu = menuBar()->addMenu(uiText("&Help"));
-    QAction *quickHelpAction = helpMenu->addAction(uiText("Quick Help"));
-    connect(quickHelpAction, &QAction::triggered, this, &MainWindow::showQuickHelpDialog);
-    QAction *aboutAction = helpMenu->addAction(uiText("About Reva Player"));
-    connect(aboutAction, &QAction::triggered, this, &MainWindow::showAboutDialog);
 
     auto *speedMenu = playbackMenu->addMenu(uiText("Speed"));
     speedDownAction_ = speedMenu->addAction(uiText("Decrease Speed"));
@@ -9389,8 +9628,9 @@ void MainWindow::setupMenuBar()
     toggleMuteAction_->setShortcut(QKeySequence(Qt::Key_M));
     toggleMuteAction_->setCheckable(true);
 
-    alwaysOnTopAction_ = playbackMenu->addAction(uiText("Always On Top"));
+    alwaysOnTopAction_ = new QAction(uiText("Always On Top"), this);
     alwaysOnTopAction_->setCheckable(true);
+    alwaysOnTopAction_->setVisible(false);
 
     auto *subtitleMenu = menuBar()->addMenu(uiText("&Subtitle"));
     toggleSubtitleVisibilityAction_ = subtitleMenu->addAction(uiText("Show Subtitles"));
@@ -9398,8 +9638,9 @@ void MainWindow::setupMenuBar()
     subtitleMenu->addSeparator();
     subtitleMenu->addAction(loadSubtitleAction_);
     subtitleMenu->addSeparator();
-    subtitleDelayDownAction_ = subtitleMenu->addAction(uiText("Subtitle Delay -0.25s"));
-    subtitleDelayUpAction_ = subtitleMenu->addAction(uiText("Subtitle Delay +0.25s"));
+    subtitleDelayDownAction_ = subtitleMenu->addAction(uiText("Subtitle Delay Down"));
+    subtitleDelayUpAction_ = subtitleMenu->addAction(uiText("Subtitle Delay Up"));
+    subtitleDelayManualAction_ = subtitleMenu->addAction(uiText("Set Subtitle Delay"));
     subtitleDelayResetAction_ = subtitleMenu->addAction(uiText("Reset Subtitle Delay"));
     subtitleMenu->addSeparator();
     auto *subtitleScaleMenu = subtitleMenu->addMenu(uiText("Scale"));
@@ -9454,8 +9695,9 @@ void MainWindow::setupMenuBar()
     auto *audioMenu = menuBar()->addMenu(uiText("&Audio"));
     audioMenu->addAction(toggleMuteAction_);
     audioMenu->addSeparator();
-    audioDelayDownAction_ = audioMenu->addAction(uiText("Audio Delay -0.10s"));
-    audioDelayUpAction_ = audioMenu->addAction(uiText("Audio Delay +0.10s"));
+    audioDelayDownAction_ = audioMenu->addAction(uiText("Audio Delay Down"));
+    audioDelayUpAction_ = audioMenu->addAction(uiText("Audio Delay Up"));
+    audioDelayManualAction_ = audioMenu->addAction(uiText("Set Audio Delay"));
     audioDelayResetAction_ = audioMenu->addAction(uiText("Reset Audio Delay"));
 
     auto *videoMenu = menuBar()->addMenu(uiText("&Video"));
@@ -9592,23 +9834,6 @@ void MainWindow::setupMenuBar()
     videoPanDownAction_ = zoomMenu->addAction(uiText("Pan Down"));
     videoPanDownAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+Down")));
 
-    videoMenu->addSeparator();
-    deinterlaceAction_ = videoMenu->addAction(uiText("Deinterlace"));
-    deinterlaceAction_->setCheckable(true);
-    addAction(deinterlaceAction_);
-    connect(deinterlaceAction_, &QAction::triggered, this, [this](const bool checked) {
-        deinterlaceEnabled_ = checked;
-        if (videoDeinterlaceCheckBox_ != nullptr) {
-            const QSignalBlocker blocker(videoDeinterlaceCheckBox_);
-            videoDeinterlaceCheckBox_->setChecked(checked);
-        }
-        playbackController_->setDeinterlace(checked);
-        syncVideoActionStates();
-        statusBar()->showMessage(
-            checked ? QStringLiteral("Deinterlace enabled") : QStringLiteral("Deinterlace disabled"),
-            2500);
-    });
-
     auto *viewMenu = menuBar()->addMenu(uiText("&View"));
     togglePlaylistAction_ = viewMenu->addAction(uiText("Playlist Panel"));
     togglePlaylistAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+P")));
@@ -9652,38 +9877,15 @@ void MainWindow::setupMenuBar()
         });
     }
 
-    viewMenu->addSeparator();
-    resetLayoutAction_ = viewMenu->addAction(uiText("Reset Window Layout"));
-    resetLayoutAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
-    connect(resetLayoutAction_, &QAction::triggered, this, &MainWindow::resetWindowLayout);
-    auto *layoutPresetsMenu = viewMenu->addMenu(uiText("Layout Presets"));
-    saveLayoutPresetAction_ = layoutPresetsMenu->addAction(uiText("Save Current Layout..."));
-    connect(saveLayoutPresetAction_, &QAction::triggered, this, &MainWindow::saveCurrentLayoutPreset);
-    loadLayoutPresetAction_ = layoutPresetsMenu->addAction(uiText("Load Saved Layout..."));
-    connect(loadLayoutPresetAction_, &QAction::triggered, this, &MainWindow::loadLayoutPreset);
-    deleteLayoutPresetAction_ = layoutPresetsMenu->addAction(uiText("Delete Saved Layout..."));
-    connect(deleteLayoutPresetAction_, &QAction::triggered, this, &MainWindow::deleteLayoutPreset);
-
     auto *toolsMenu = menuBar()->addMenu(uiText("&Tools"));
-    customCommandsMenu_ = toolsMenu->addMenu(uiText("Custom Commands"));
-    commandPaletteAction_ = toolsMenu->addAction(uiText("Command Palette..."));
-    commandPaletteAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+K")));
-    connect(commandPaletteAction_, &QAction::triggered, this, &MainWindow::showCommandPalette);
-    showScriptsPanelAction_ = toolsMenu->addAction(uiText("Scripts Panel"));
-    connect(showScriptsPanelAction_, &QAction::triggered, this, [this]() {
-        if (detailsTabs_ != nullptr && scriptsPage_ != nullptr) {
-            setSidePanelVisible(SidePanel::Details, true, true);
-            detailsTabs_->setCurrentWidget(scriptsPage_);
-        }
-    });
-    toolsMenu->addAction(showMediaInfoAction_);
+    toolsMenu->addAction(uiText("Clear Cache"), this, &MainWindow::clearApplicationCache);
     toolsMenu->addAction(preferencesAction_);
 
-    customCommandSlot1Action_ = new QAction(uiText("Run Custom Command Slot 1"), this);
-    customCommandSlot2Action_ = new QAction(uiText("Run Custom Command Slot 2"), this);
-    customCommandSlot3Action_ = new QAction(uiText("Run Custom Command Slot 3"), this);
-    customCommandSlot4Action_ = new QAction(uiText("Run Custom Command Slot 4"), this);
-    customCommandSlot5Action_ = new QAction(uiText("Run Custom Command Slot 5"), this);
+    auto *helpMenu = menuBar()->addMenu(uiText("&Help"));
+    QAction *quickHelpAction = helpMenu->addAction(uiText("Quick Help"));
+    connect(quickHelpAction, &QAction::triggered, this, &MainWindow::showQuickHelpDialog);
+    QAction *aboutAction = helpMenu->addAction(uiText("About Reva Player"));
+    connect(aboutAction, &QAction::triggered, this, &MainWindow::showAboutDialog);
 
     syncRepeatModeActions();
     syncVideoActionStates();
@@ -9726,30 +9928,6 @@ void MainWindow::setupPlaybackActions()
     });
     bindAction(closeApplicationAction_, [this]() {
         close();
-    });
-    bindAction(commandPaletteAction_, [this]() {
-        showCommandPalette();
-    });
-    bindAction(showScriptsPanelAction_, [this]() {
-        if (detailsTabs_ != nullptr && scriptsPage_ != nullptr) {
-            setSidePanelVisible(SidePanel::Details, true, true);
-            detailsTabs_->setCurrentWidget(scriptsPage_);
-        }
-    });
-    bindAction(customCommandSlot1Action_, [this]() {
-        executeCustomCommandAtIndex(0);
-    });
-    bindAction(customCommandSlot2Action_, [this]() {
-        executeCustomCommandAtIndex(1);
-    });
-    bindAction(customCommandSlot3Action_, [this]() {
-        executeCustomCommandAtIndex(2);
-    });
-    bindAction(customCommandSlot4Action_, [this]() {
-        executeCustomCommandAtIndex(3);
-    });
-    bindAction(customCommandSlot5Action_, [this]() {
-        executeCustomCommandAtIndex(4);
     });
     bindAction(stopAction_, [this]() {
         stopRequested_ = true;
@@ -9825,9 +10003,7 @@ void MainWindow::setupPlaybackActions()
         }
         showPlaybackFeedback(QStringLiteral("Frame +1"));
     });
-    bindAction(alwaysOnTopAction_, [this]() {
-        setAlwaysOnTopEnabled(!alwaysOnTop_, true);
-    });
+    setAlwaysOnTopEnabled(false, false);
     bindAction(repeatOffAction_, [this]() {
         setRepeatMode(QStringLiteral("off"), true);
     });
@@ -9931,18 +10107,16 @@ void MainWindow::setupPlaybackActions()
         showPlaybackSpeedFeedback(1.0, true);
     });
     bindAction(subtitleDelayDownAction_, [this]() {
-        const double targetDelay = currentSubtitleDelaySeconds_ - 0.25;
-        playbackController_->setSubtitleDelay(targetDelay);
-        statusBar()->showMessage(uiText("Subtitle delay: %1").arg(revaplayer::application::formatSignedSeconds(targetDelay)), 2500);
+        adjustSubtitleDelayWithFeedback(-subtitleSyncSmallStep());
     });
     bindAction(subtitleDelayUpAction_, [this]() {
-        const double targetDelay = currentSubtitleDelaySeconds_ + 0.25;
-        playbackController_->setSubtitleDelay(targetDelay);
-        statusBar()->showMessage(uiText("Subtitle delay: %1").arg(revaplayer::application::formatSignedSeconds(targetDelay)), 2500);
+        adjustSubtitleDelayWithFeedback(subtitleSyncSmallStep());
+    });
+    bindAction(subtitleDelayManualAction_, [this]() {
+        showManualSubtitleDelayDialog();
     });
     bindAction(subtitleDelayResetAction_, [this]() {
-        playbackController_->resetSubtitleDelay();
-        statusBar()->showMessage(uiText("Subtitle delay reset to %1").arg(revaplayer::application::formatSignedSeconds(0.0)), 2500);
+        resetSubtitleDelayWithFeedback();
     });
     bindAction(subtitleScaleDownAction_, [this]() {
         const double targetScale = revaplayer::application::clampSubtitleScale(currentSubtitleScale_ - 0.10);
@@ -10002,18 +10176,16 @@ void MainWindow::setupPlaybackActions()
             3000);
     });
     bindAction(audioDelayDownAction_, [this]() {
-        const double targetDelay = currentAudioDelaySeconds_ - 0.10;
-        playbackController_->setAudioDelay(targetDelay);
-        statusBar()->showMessage(uiText("Audio delay: %1").arg(revaplayer::application::formatSignedSeconds(targetDelay)), 2500);
+        setAudioDelayWithFeedback(currentAudioDelaySeconds_ - 0.10);
     });
     bindAction(audioDelayUpAction_, [this]() {
-        const double targetDelay = currentAudioDelaySeconds_ + 0.10;
-        playbackController_->setAudioDelay(targetDelay);
-        statusBar()->showMessage(uiText("Audio delay: %1").arg(revaplayer::application::formatSignedSeconds(targetDelay)), 2500);
+        setAudioDelayWithFeedback(currentAudioDelaySeconds_ + 0.10);
+    });
+    bindAction(audioDelayManualAction_, [this]() {
+        showManualAudioDelayDialog();
     });
     bindAction(audioDelayResetAction_, [this]() {
-        playbackController_->resetAudioDelay();
-        statusBar()->showMessage(uiText("Audio delay reset to %1").arg(revaplayer::application::formatSignedSeconds(0.0)), 2500);
+        setAudioDelayWithFeedback(0.0, true);
     });
 }
 
@@ -10432,7 +10604,7 @@ void MainWindow::setupDockWidgets()
     sceneBookmarkButton_->setAutoRaise(true);
 
     sceneExportButton_ = new QToolButton(sceneHeader);
-    sceneExportButton_->setText(uiText("Export"));
+    sceneExportButton_->setText(uiText("Export Images"));
     sceneExportButton_->setAutoRaise(true);
 
     sceneStepSpinBox_ = new QSpinBox(sceneHeader);
@@ -10491,7 +10663,7 @@ void MainWindow::setupDockWidgets()
     auto *secondaryButtonLayout = new QHBoxLayout(secondaryButtonRow);
     secondaryButtonLayout->setContentsMargins(0, 0, 0, 0);
     secondaryButtonLayout->setSpacing(8);
-    auto *loadExtraSubtitleButton = new QPushButton(uiText("Load External Subtitle..."), secondaryButtonRow);
+    auto *loadExtraSubtitleButton = new QPushButton(uiText("Load External Subtitle"), secondaryButtonRow);
     auto *showTrackPanelButton = new QPushButton(uiText("Show Tracks"), secondaryButtonRow);
     secondaryButtonLayout->addWidget(loadExtraSubtitleButton, 0);
     secondaryButtonLayout->addWidget(showTrackPanelButton, 0);
@@ -10511,21 +10683,43 @@ void MainWindow::setupDockWidgets()
     subtitleWorkflowButtonsLayout->setSpacing(8);
     auto *subtitleAutoSelectButton = new QPushButton(uiText("Auto Select"), subtitleWorkflowButtons);
     auto *subtitleDownloadButton = new QPushButton(uiText("Download"), subtitleWorkflowButtons);
-    auto *subtitleDelayBackSmallButton = new QPushButton(QStringLiteral("Sub -"), subtitleWorkflowButtons);
-    auto *subtitleDelayForwardSmallButton = new QPushButton(QStringLiteral("Sub +"), subtitleWorkflowButtons);
-    auto *subtitleDelayBackLargeButton = new QPushButton(QStringLiteral("Sub --"), subtitleWorkflowButtons);
-    auto *subtitleDelayForwardLargeButton = new QPushButton(QStringLiteral("Sub ++"), subtitleWorkflowButtons);
-    auto *subtitleDelayResetButton = new QPushButton(uiText("Reset Sync"), subtitleWorkflowButtons);
+    auto *subtitleDelayBackLargeButton = new QPushButton(uiText("Delay -1s"), subtitleWorkflowButtons);
+    auto *subtitleDelayBackMediumButton = new QPushButton(uiText("Delay -0.5s"), subtitleWorkflowButtons);
+    auto *subtitleDelayBackSmallButton = new QPushButton(uiText("Delay -0.1s"), subtitleWorkflowButtons);
+    auto *subtitleDelayForwardSmallButton = new QPushButton(uiText("Delay +0.1s"), subtitleWorkflowButtons);
+    auto *subtitleDelayForwardMediumButton = new QPushButton(uiText("Delay +0.5s"), subtitleWorkflowButtons);
+    auto *subtitleDelayForwardLargeButton = new QPushButton(uiText("Delay +1s"), subtitleWorkflowButtons);
+    auto *subtitleDelayResetButton = new QPushButton(uiText("Reset subtitle delay to 0"), subtitleWorkflowButtons);
     subtitleWorkflowButtonsLayout->addWidget(subtitleAutoSelectButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDownloadButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDelayBackLargeButton, 0);
+    subtitleWorkflowButtonsLayout->addWidget(subtitleDelayBackMediumButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDelayBackSmallButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDelayForwardSmallButton, 0);
+    subtitleWorkflowButtonsLayout->addWidget(subtitleDelayForwardMediumButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDelayForwardLargeButton, 0);
     subtitleWorkflowButtonsLayout->addWidget(subtitleDelayResetButton, 0);
     subtitleWorkflowButtonsLayout->addStretch(1);
 
     auto *subtitleWorkflowForm = new QFormLayout();
+    auto *subtitleDelayCustomRow = new QWidget(subtitleWorkflowGroup);
+    auto *subtitleDelayCustomRowLayout = new QHBoxLayout(subtitleDelayCustomRow);
+    subtitleDelayCustomRowLayout->setContentsMargins(0, 0, 0, 0);
+    subtitleDelayCustomRowLayout->setSpacing(8);
+    subtitleDelayCustomSpinBox_ = new QDoubleSpinBox(subtitleDelayCustomRow);
+    subtitleDelayCustomSpinBox_->setRange(-3600.0, 3600.0);
+    subtitleDelayCustomSpinBox_->setDecimals(2);
+    subtitleDelayCustomSpinBox_->setSingleStep(0.05);
+    subtitleDelayCustomSpinBox_->setValue(0.0);
+    subtitleDelayCustomSpinBox_->setSuffix(QStringLiteral(" s"));
+    auto *subtitleDelayApplyButton = new QPushButton(uiText("Apply Delay"), subtitleDelayCustomRow);
+    subtitleDelayCustomRowLayout->addWidget(subtitleDelayCustomSpinBox_, 1);
+    subtitleDelayCustomRowLayout->addWidget(subtitleDelayApplyButton, 0);
+    subtitleWorkflowForm->addRow(uiText("Subtitle delay"), subtitleDelayCustomRow);
+
+    subtitleRememberDelayForMediaCheckBox_ = new QCheckBox(uiText("Remember subtitle delay for this media"), subtitleWorkflowGroup);
+    subtitleWorkflowForm->addRow(subtitleRememberDelayForMediaCheckBox_);
+
     auto *subtitleLanguageHintLabel = new QLabel(uiText("Preferred languages"), subtitleWorkflowGroup);
     auto *subtitleLanguageHintRow = new QWidget(subtitleWorkflowGroup);
     auto *subtitleLanguageHintLayout = new QHBoxLayout(subtitleLanguageHintRow);
@@ -10537,6 +10731,8 @@ void MainWindow::setupDockWidgets()
     subtitleLanguageHintLayout->addWidget(subtitleLanguageHintEdit_, 1);
     subtitleLanguageHintLayout->addWidget(applySubtitleLanguageHintsButton, 0);
     subtitleWorkflowForm->addRow(subtitleLanguageHintLabel, subtitleLanguageHintRow);
+    subtitleLanguageHintLabel->setVisible(false);
+    subtitleLanguageHintRow->setVisible(false);
 
     subtitleAutomationStatusLabel_ = new QLabel(uiText("Automatic subtitle selection is ready."), subtitleWorkflowGroup);
     subtitleAutomationStatusLabel_->setWordWrap(true);
@@ -10717,55 +10913,6 @@ void MainWindow::setupDockWidgets()
     mediaLabLayout->addStretch(1);
     mediaLabScrollArea->setWidget(mediaLabPage);
 
-    scriptsPage_ = new QWidget(detailsTabs_);
-    scriptsPage_->setObjectName(QStringLiteral("detailsContentPage"));
-    scriptsPage_->setAttribute(Qt::WA_StyledBackground, true);
-    auto *scriptsLayout = new QVBoxLayout(scriptsPage_);
-    scriptsLayout->setContentsMargins(8, 8, 8, 8);
-    scriptsLayout->setSpacing(8);
-
-    auto *scriptsHeader = new QWidget(scriptsPage_);
-    scriptsHeader->setObjectName(QStringLiteral("scriptsHeaderBar"));
-    auto *scriptsHeaderLayout = new QHBoxLayout(scriptsHeader);
-    scriptsHeaderLayout->setContentsMargins(8, 6, 8, 6);
-    scriptsHeaderLayout->setSpacing(8);
-
-    scriptsReloadButton_ = new QToolButton(scriptsHeader);
-    scriptsReloadButton_->setText(uiText("Reload"));
-    scriptsReloadButton_->setAutoRaise(true);
-    scriptsImportButton_ = new QToolButton(scriptsHeader);
-    scriptsImportButton_->setText(uiText("Import"));
-    scriptsImportButton_->setAutoRaise(true);
-    scriptsExportButton_ = new QToolButton(scriptsHeader);
-    scriptsExportButton_->setText(uiText("Export"));
-    scriptsExportButton_->setAutoRaise(true);
-    scriptsDeleteButton_ = new QToolButton(scriptsHeader);
-    scriptsDeleteButton_->setText(uiText("Delete"));
-    scriptsDeleteButton_->setAutoRaise(true);
-    scriptsRunButton_ = new QToolButton(scriptsHeader);
-    scriptsRunButton_->setText(uiText("Run"));
-    scriptsRunButton_->setAutoRaise(true);
-
-    scriptsHeaderLayout->addWidget(scriptsReloadButton_, 0);
-    scriptsHeaderLayout->addWidget(scriptsImportButton_, 0);
-    scriptsHeaderLayout->addWidget(scriptsExportButton_, 0);
-    scriptsHeaderLayout->addWidget(scriptsDeleteButton_, 0);
-    scriptsHeaderLayout->addWidget(scriptsRunButton_, 0);
-    scriptsHeaderLayout->addStretch(1);
-
-    scriptsList_ = new QListWidget(scriptsPage_);
-    scriptsList_->setSelectionMode(QAbstractItemView::SingleSelection);
-    scriptsList_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-
-    scriptsStatusLabel_ = new QLabel(
-        uiText("Scripts are loaded from the local scripts panel directory and can extend the player without changing the core."),
-        scriptsPage_);
-    scriptsStatusLabel_->setWordWrap(true);
-
-    scriptsLayout->addWidget(scriptsHeader, 0);
-    scriptsLayout->addWidget(scriptsList_, 1);
-    scriptsLayout->addWidget(scriptsStatusLabel_, 0);
-
     connect(loadExtraSubtitleButton, &QPushButton::clicked, this, &MainWindow::loadSubtitleFile);
     connect(showTrackPanelButton, &QPushButton::clicked, this, [this]() {
         setSidePanelVisible(SidePanel::Details, true, true);
@@ -10783,13 +10930,32 @@ void MainWindow::setupDockWidgets()
     connect(subtitleDelayForwardSmallButton, &QPushButton::clicked, this, [this]() {
         adjustSubtitleDelayWithFeedback(subtitleSyncSmallStep());
     });
+    connect(subtitleDelayBackMediumButton, &QPushButton::clicked, this, [this]() {
+        adjustSubtitleDelayWithFeedback(-(subtitleSyncSmallStep() * 2.0));
+    });
+    connect(subtitleDelayForwardMediumButton, &QPushButton::clicked, this, [this]() {
+        adjustSubtitleDelayWithFeedback(subtitleSyncSmallStep() * 2.0);
+    });
     connect(subtitleDelayBackLargeButton, &QPushButton::clicked, this, [this]() {
-        adjustSubtitleDelayWithFeedback(-subtitleSyncLargeStep());
+        adjustSubtitleDelayWithFeedback(-(subtitleSyncSmallStep() * 4.0));
     });
     connect(subtitleDelayForwardLargeButton, &QPushButton::clicked, this, [this]() {
-        adjustSubtitleDelayWithFeedback(subtitleSyncLargeStep());
+        adjustSubtitleDelayWithFeedback(subtitleSyncSmallStep() * 4.0);
     });
     connect(subtitleDelayResetButton, &QPushButton::clicked, this, &MainWindow::resetSubtitleDelayWithFeedback);
+    connect(subtitleDelayApplyButton, &QPushButton::clicked, this, [this]() {
+        if (subtitleDelayCustomSpinBox_ == nullptr) {
+            return;
+        }
+        setSubtitleDelayWithFeedback(subtitleDelayCustomSpinBox_->value());
+    });
+    connect(subtitleRememberDelayForMediaCheckBox_, &QCheckBox::toggled, this, [this](const bool enabled) {
+        if (enabled) {
+            saveRememberedSubtitleDelayForCurrentMedia();
+        } else {
+            removeRememberedSubtitleDelayForCurrentMedia();
+        }
+    });
     connect(applySubtitleLanguageHintsButton, &QPushButton::clicked, this, [this]() {
         if (subtitleLanguageHintEdit_ == nullptr) {
             return;
@@ -10876,9 +11042,9 @@ void MainWindow::setupDockWidgets()
     connect(browseShaderButton, &QPushButton::clicked, this, [this]() {
         const QString path = filedialog::getOpenFileName(
             this,
-            QStringLiteral("Choose GLSL Shader"),
+            uiText("Choose GLSL Shader"),
             shaderPathEdit_ != nullptr ? shaderPathEdit_->text().trimmed() : QString {},
-            QStringLiteral("Shader Files (*.glsl *.hook *.frag *.vert);;All Files (*)"));
+            uiText("Shader Files (*.glsl *.hook *.frag *.vert);;All Files (*)"));
         if (!path.trimmed().isEmpty() && shaderPathEdit_ != nullptr) {
             shaderPathEdit_->setText(path);
             applyVideoFilterState();
@@ -10960,7 +11126,6 @@ void MainWindow::setupDockWidgets()
     detailsTabs_->addTab(favoritesPage_, uiText("Favorites"));
     detailsTabs_->addTab(scenePage, uiText("Scenes"));
     detailsTabs_->addTab(mediaLabScrollArea, uiText("Media Lab"));
-    detailsTabs_->addTab(scriptsPage_, uiText("Scripts"));
     detailsTabs_->setMovable(true);
     bookmarksPage_->setProperty("detailsTabId", QStringLiteral("bookmarks"));
     chaptersList_->setProperty("detailsTabId", QStringLiteral("chapters"));
@@ -10969,7 +11134,6 @@ void MainWindow::setupDockWidgets()
     favoritesPage_->setProperty("detailsTabId", QStringLiteral("favorites"));
     scenePage->setProperty("detailsTabId", QStringLiteral("scenes"));
     mediaLabScrollArea->setProperty("detailsTabId", QStringLiteral("media_lab"));
-    scriptsPage_->setProperty("detailsTabId", QStringLiteral("scripts"));
     if (detailsTabs_->tabBar() != nullptr) {
         detailsTabs_->tabBar()->hide();
         connect(detailsTabs_->tabBar(), &QTabBar::tabMoved, this, [this](const int, const int) {
@@ -11524,7 +11688,7 @@ void MainWindow::connectUi()
     connect(sceneRefreshButton_, &QToolButton::clicked, this, [this]() {
         rebuildSceneBrowser(true);
     });
-    connect(sceneExportButton_, &QToolButton::clicked, this, &MainWindow::exportScenesAsCsv);
+    connect(sceneExportButton_, &QToolButton::clicked, this, &MainWindow::exportSceneImages);
     connect(sceneBookmarkButton_, &QToolButton::clicked, this, &MainWindow::bookmarkSelectedScene);
     connect(sceneStepSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](const int) {
         if (settingsController_ != nullptr) {
@@ -11541,26 +11705,6 @@ void MainWindow::connectUi()
         }
         playbackController_->seekToSeconds(item->data(Qt::UserRole).toDouble());
         showPlaybackFeedback(QStringLiteral("Scene  •  %1").arg(formatPlaybackTime(item->data(Qt::UserRole).toDouble())));
-    });
-    connect(scriptsReloadButton_, &QToolButton::clicked, this, &MainWindow::reloadScriptsPanel);
-    connect(scriptsRunButton_, &QToolButton::clicked, this, &MainWindow::runSelectedScript);
-    connect(scriptsImportButton_, &QToolButton::clicked, this, &MainWindow::importScriptFile);
-    connect(scriptsExportButton_, &QToolButton::clicked, this, &MainWindow::exportSelectedScript);
-    connect(scriptsDeleteButton_, &QToolButton::clicked, this, &MainWindow::deleteSelectedScript);
-    connect(scriptsList_, &QListWidget::itemActivated, this, [this](QListWidgetItem *) {
-        runSelectedScript();
-    });
-    connect(scriptsList_, &QListWidget::itemSelectionChanged, this, [this]() {
-        const bool hasSelection = scriptsList_ != nullptr && scriptsList_->currentRow() >= 0;
-        if (scriptsRunButton_ != nullptr) {
-            scriptsRunButton_->setEnabled(hasSelection);
-        }
-        if (scriptsExportButton_ != nullptr) {
-            scriptsExportButton_->setEnabled(hasSelection);
-        }
-        if (scriptsDeleteButton_ != nullptr) {
-            scriptsDeleteButton_->setEnabled(hasSelection);
-        }
     });
     connect(secondarySubtitleCombo_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](const int) {
         applySecondarySubtitleSelection();
@@ -11608,6 +11752,13 @@ void MainWindow::connectUi()
     });
     connect(playbackController_, &revaplayer::application::PlaybackController::subtitleDelayChanged, this, [this](const double delaySeconds) {
         currentSubtitleDelaySeconds_ = delaySeconds;
+        if (subtitleDelayCustomSpinBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleDelayCustomSpinBox_);
+            subtitleDelayCustomSpinBox_->setValue(delaySeconds);
+        }
+        if (subtitleRememberDelayForMediaCheckBox_ != nullptr && subtitleRememberDelayForMediaCheckBox_->isChecked()) {
+            saveRememberedSubtitleDelayForCurrentMedia();
+        }
     });
     connect(playbackController_, &revaplayer::application::PlaybackController::subtitleVisibilityChanged, this, [this](const bool visible) {
         subtitleVisible_ = visible;
@@ -11816,11 +11967,15 @@ bool MainWindow::ensureBookmarkStorageReady(const bool announceFailure)
 
 void MainWindow::applyShortcutPreferences()
 {
+    QHash<QAction *, QList<QKeySequence>> shortcutsByAction;
+    QSet<QAction *> configuredActions;
+
     for (const auto &definition : kShortcutDefinitions) {
         QAction *action = actionForShortcutId(QString::fromLatin1(definition.id));
         if (action == nullptr) {
             continue;
         }
+        configuredActions.insert(action);
 
         if (!actions().contains(action)) {
             addAction(action);
@@ -11837,7 +11992,18 @@ void MainWindow::applyShortcutPreferences()
             ? defaultSequence
             : QKeySequence(overrideSequence, QKeySequence::PortableText);
 
-        action->setShortcut(effectiveSequence);
+        if (!effectiveSequence.isEmpty()) {
+            shortcutsByAction[action].push_back(effectiveSequence);
+        }
+    }
+
+    for (auto it = shortcutsByAction.cbegin(); it != shortcutsByAction.cend(); ++it) {
+        it.key()->setShortcuts(it.value());
+    }
+    for (QAction *action : configuredActions) {
+        if (action != nullptr && !shortcutsByAction.contains(action)) {
+            action->setShortcut(QKeySequence {});
+        }
     }
 }
 
@@ -12067,7 +12233,6 @@ void MainWindow::applyRuntimePreferences()
     if (mediaLoaded_) {
         refreshSceneBrowserPrompt(!sceneStepChanged);
     }
-    reloadScriptsPanel();
     updateBookmarkSelectionPreview();
     applyAudioFilterState();
     applyVideoFilterState();
@@ -12152,7 +12317,7 @@ void MainWindow::acquireDisplaySleepInhibition()
         QStringLiteral("/org/freedesktop/ScreenSaver"),
         QStringLiteral("org.freedesktop.ScreenSaver"),
         QStringLiteral("Inhibit"),
-        {QStringLiteral("Reva Player"), QStringLiteral("Video playback is active")},
+        {QStringLiteral("Reva Player"), uiText("Video playback is active")},
         &displaySleepScreenSaverCookie_) || inhibited;
     inhibited = callSessionInhibit(
         QStringLiteral("org.gnome.SessionManager"),
@@ -12161,7 +12326,7 @@ void MainWindow::acquireDisplaySleepInhibition()
         QStringLiteral("Inhibit"),
         {QStringLiteral("Reva Player"),
          uint(0),
-         QStringLiteral("Video playback is active"),
+         uiText("Video playback is active"),
          uint(12)},
         &displaySleepGnomeSessionCookie_) || inhibited;
     inhibited = startSystemdDisplayInhibitor() || inhibited;
@@ -12341,33 +12506,13 @@ void MainWindow::rebuildControlBarSubtitleMenu(const QVector<revaplayer::domain:
 
     QVector<revaplayer::domain::TrackInfo> subtitleTracks;
     subtitleTracks.reserve(tracks.size());
-    bool subtitleTrackSelected = false;
     for (const auto &track : tracks) {
         if (track.type != revaplayer::domain::TrackType::Subtitle) {
             continue;
         }
 
         subtitleTracks.push_back(track);
-        subtitleTrackSelected = subtitleTrackSelected || track.selected;
     }
-
-    QAction *offAction = new QAction(uiText("Off"), this);
-    offAction->setCheckable(true);
-    offAction->setChecked(!subtitleTrackSelected);
-    controlBarSubtitleTrackActionGroup_->addAction(offAction);
-    subtitleMenu->addAction(offAction);
-    connect(offAction, &QAction::triggered, this, [this](const bool checked) {
-        if (!checked || playbackController_ == nullptr) {
-            return;
-        }
-
-        playbackController_->executeMpvCommand({
-            QStringLiteral("set"),
-            QStringLiteral("sid"),
-            QStringLiteral("no"),
-        });
-        statusBar()->showMessage(uiText("Subtitles: Off"), 2500);
-    });
 
     if (subtitleTracks.isEmpty()) {
         QAction *placeholder = subtitleMenu->addAction(uiText("No subtitles available"));
@@ -12846,9 +12991,9 @@ void MainWindow::beginLoadFeedback(const QString &displayTarget)
     updateActionStates();
 
     const QString label = displayTarget.trimmed().isEmpty() ? QStringLiteral("media") : displayTarget.trimmed();
-    videoViewport_->setOverlayText(uiText("Loading %1...").arg(label));
+    videoViewport_->setOverlayText(uiText("Loading %1").arg(label));
     videoViewport_->setOverlayVisible(true);
-    statusBar()->showMessage(uiText("Loading %1...").arg(label), 3000);
+    statusBar()->showMessage(uiText("Loading %1").arg(label), 3000);
 }
 
 void MainWindow::persistPlaybackProgress(const bool completed, const bool force)
@@ -13608,7 +13753,7 @@ void MainWindow::showAboutDialog()
                                   .replace(QStringLiteral("\n"), QStringLiteral("<br>"));
     aboutDialog.setInformativeText(
         aboutText
-        + QStringLiteral("<br><br>Project: <a href=\"%1\">%1</a>").arg(projectUrl));
+        + QStringLiteral("<br><br>%1: <a href=\"%2\">%2</a>").arg(uiText("Project").toHtmlEscaped(), projectUrl));
     for (QLabel *label : aboutDialog.findChildren<QLabel *>()) {
         label->setOpenExternalLinks(true);
         label->setTextInteractionFlags(Qt::TextBrowserInteraction);
@@ -13629,7 +13774,7 @@ void MainWindow::showQuickHelpDialog()
     helpDialog.setInformativeText(
         uiText("Open local media with Ctrl+O, folders with Ctrl+Shift+O, and URLs with Ctrl+L.\n\n"
                "Use the Playlist panel for current files, saved folders, search, progress, and drag reorder. "
-               "Use Details for tracks, subtitles, history, bookmarks, scenes, scripts, and diagnostics.\n\n"
+               "Use Details for tracks, subtitles, history, bookmarks, scenes, and diagnostics.\n\n"
                "Clear Cache is available from File > Maintenance and Settings > Maintenance / Data Management. "
                "Factory Reset is only available from Settings and never deletes media files from disk."));
     helpDialog.exec();
@@ -13827,8 +13972,6 @@ void MainWindow::factoryResetApplication()
     }
     rebuildVideoQualityMenu({});
     rebuildControlBarSubtitleMenu({});
-    customCommands_.clear();
-    rebuildCustomCommandsMenu();
     clearPendingCurrentMediaRestore();
     clearPendingPlaylistSelection();
     pendingPlaylistNaturalOrderSources_.clear();
@@ -14467,17 +14610,17 @@ void MainWindow::rebuildSceneBrowser(const bool force)
         || !fileInfo.has_value()
         || !fileInfo->exists()
         || !fileInfo->isFile()) {
-        clearSceneBrowser(QStringLiteral("Load a local video to browse scenes"));
+        clearSceneBrowser(uiText("Load a local video to browse scenes"));
         return;
     }
 
     if (thumbnailService_ == nullptr || !thumbnailService_->previewEnabled()) {
-        clearSceneBrowser(QStringLiteral("Enable preview thumbnails in Preferences to use Scene Browser"));
+        clearSceneBrowser(uiText("Enable preview thumbnails in Preferences to use Scene Browser"));
         return;
     }
 
     if (currentDurationSeconds_ <= 0.0) {
-        clearSceneBrowser(QStringLiteral("Scenes will appear once the media duration is known"));
+        clearSceneBrowser(uiText("Scenes will appear once the media duration is known"));
         return;
     }
 
@@ -14522,7 +14665,7 @@ void MainWindow::rebuildSceneBrowser(const bool force)
     }
 
     sceneBrowserLoading_ = !sceneThumbnailQueue_.isEmpty();
-    sceneStatusLabel_->setText(uiText("Loading %1 scenes...").arg(sceneList_->count()));
+    sceneStatusLabel_->setText(uiText("Loading %1 scenes").arg(sceneList_->count()));
     filterSceneBrowser();
     requestNextSceneThumbnail();
     updateActionStates();
@@ -14546,37 +14689,80 @@ void MainWindow::filterSceneBrowser()
     }
 }
 
-void MainWindow::exportScenesAsCsv() const
+void MainWindow::exportSceneImages()
 {
     if (sceneList_ == nullptr || sceneList_->count() == 0) {
         return;
     }
 
-    const QString path = filedialog::getSaveFileName(
-        const_cast<MainWindow *>(this),
-        QStringLiteral("Export Scenes"),
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        QStringLiteral("Scene CSV (*.csv)"));
-    if (path.trimmed().isEmpty()) {
+    QString initialDirectory = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (snapshotController_ != nullptr) {
+        initialDirectory = snapshotController_->screenshotDirectory();
+    }
+    if (initialDirectory.trimmed().isEmpty()) {
+        initialDirectory = QDir::homePath();
+    }
+
+    const QString directoryPath = filedialog::getExistingDirectory(
+        this,
+        uiText("Export Scene Images"),
+        initialDirectory,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (directoryPath.trimmed().isEmpty()) {
         return;
     }
 
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    QDir directory(directoryPath);
+    if (!directory.exists() && !directory.mkpath(QStringLiteral("."))) {
+        statusBar()->showMessage(uiText("Could not create the export folder."), 4000);
         return;
     }
 
-    file.write("time_seconds,time_label\n");
+    const QString mediaTitle = effectiveCurrentMediaTitle().trimmed().isEmpty()
+        ? QStringLiteral("scenes")
+        : effectiveCurrentMediaTitle().trimmed();
+    int savedCount = 0;
+    int skippedCount = 0;
+
     for (int row = 0; row < sceneList_->count(); ++row) {
         QListWidgetItem *item = sceneList_->item(row);
         if (item == nullptr) {
             continue;
         }
-        const QString line = QStringLiteral("%1,%2\n")
-            .arg(QString::number(item->data(Qt::UserRole).toDouble(), 'f', 3), item->text());
-        file.write(line.toUtf8());
+
+        QImage image = item->data(kSceneThumbnailImageRole).value<QImage>();
+        if (image.isNull() && item->data(Qt::UserRole + 2).toInt() == 1) {
+            image = item->icon().pixmap(sceneList_->iconSize()).toImage();
+        }
+        if (image.isNull()) {
+            ++skippedCount;
+            continue;
+        }
+
+        QString timeStem = item->text().trimmed();
+        timeStem.replace(QChar(':'), QChar('-'));
+        const QString fileStem = revaplayer::application::sanitizeSnapshotFileStem(
+            QStringLiteral("%1-scene-%2-%3")
+                .arg(mediaTitle)
+                .arg(row + 1, 2, 10, QChar('0'))
+                .arg(timeStem));
+        const QString targetPath = directory.filePath(QStringLiteral("%1.png").arg(fileStem));
+        if (image.save(targetPath, "PNG", 95)) {
+            ++savedCount;
+        } else {
+            ++skippedCount;
+        }
     }
-    file.commit();
+
+    if (savedCount == 0) {
+        statusBar()->showMessage(uiText("Generate scene thumbnails before exporting images."), 5000);
+        return;
+    }
+
+    const QString message = skippedCount > 0
+        ? uiText("Exported %1 scene images. %2 were unavailable.").arg(savedCount).arg(skippedCount)
+        : uiText("Exported %1 scene images.").arg(savedCount);
+    showActionResult(message, message, 5000);
 }
 
 void MainWindow::bookmarkSelectedScene()
@@ -14728,7 +14914,7 @@ void MainWindow::requestNextSceneThumbnail()
         }
 
         sceneStatusLabel_->setText(
-            uiText("Loading %1 / %2 scenes...")
+            uiText("Loading %1 / %2 scenes")
                 .arg(readyCount + failedCount)
                 .arg(sceneList_->count()));
     };
@@ -14765,7 +14951,7 @@ void MainWindow::populateSecondarySubtitleOptions()
     const QString previousValue = secondarySubtitleCombo_->currentData().toString();
     const QSignalBlocker blocker(secondarySubtitleCombo_);
     secondarySubtitleCombo_->clear();
-    secondarySubtitleCombo_->addItem(QStringLiteral("Off"), QStringLiteral("no"));
+    secondarySubtitleCombo_->addItem(uiText("Off"), QStringLiteral("no"));
 
     for (const auto &track : currentTracks_) {
         if (track.type == revaplayer::domain::TrackType::Subtitle) {
@@ -14798,20 +14984,127 @@ void MainWindow::applySecondarySubtitleSelection()
     }
 }
 
+void MainWindow::setSubtitleDelayWithFeedback(double delaySeconds, const bool resetRequested)
+{
+    if (playbackController_ == nullptr || !mediaLoaded_) {
+        return;
+    }
+
+    delaySeconds = std::clamp(delaySeconds, -3600.0, 3600.0);
+    if (resetRequested || std::abs(delaySeconds) < 0.0005) {
+        delaySeconds = 0.0;
+        playbackController_->resetSubtitleDelay();
+    } else {
+        playbackController_->setSubtitleDelay(delaySeconds);
+    }
+    currentSubtitleDelaySeconds_ = delaySeconds;
+
+    if (subtitleDelayCustomSpinBox_ != nullptr) {
+        const QSignalBlocker blocker(subtitleDelayCustomSpinBox_);
+        subtitleDelayCustomSpinBox_->setValue(delaySeconds);
+    }
+
+    const QString text = uiText("Subtitle delay: %1").arg(subtitleDelayDisplayText(delaySeconds));
+    statusBar()->showMessage(text, 2500);
+    showPlaybackFeedback(text);
+    if (subtitleAutomationStatusLabel_ != nullptr) {
+        subtitleAutomationStatusLabel_->setText(resetRequested
+                ? uiText("Subtitle delay reset to %1").arg(subtitleDelayDisplayText(0.0))
+                : text);
+    }
+    if (subtitleRememberDelayForMediaCheckBox_ != nullptr && subtitleRememberDelayForMediaCheckBox_->isChecked()) {
+        saveRememberedSubtitleDelayForCurrentMedia();
+    }
+}
+
+void MainWindow::saveRememberedSubtitleDelayForCurrentMedia()
+{
+    if (settingsController_ == nullptr
+        || currentMediaSource_.trimmed().isEmpty()
+        || subtitleRememberDelayForMediaCheckBox_ == nullptr
+        || !subtitleRememberDelayForMediaCheckBox_->isChecked()) {
+        return;
+    }
+
+    const QString storageKey = rememberedSubtitleDelayStorageKeyForSource(currentMediaSource_);
+    if (storageKey.isEmpty()) {
+        return;
+    }
+
+    settingsController_->setCustomValue(storageKey, QString::number(currentSubtitleDelaySeconds_, 'f', 3));
+}
+
+void MainWindow::removeRememberedSubtitleDelayForCurrentMedia()
+{
+    if (settingsController_ == nullptr || currentMediaSource_.trimmed().isEmpty()) {
+        return;
+    }
+
+    const QString storageKey = rememberedSubtitleDelayStorageKeyForSource(currentMediaSource_);
+    if (!storageKey.isEmpty()) {
+        settingsController_->removeCustomValue(storageKey);
+    }
+}
+
+void MainWindow::applyRememberedSubtitleDelayForCurrentMedia()
+{
+    if (settingsController_ == nullptr
+        || playbackController_ == nullptr
+        || !mediaLoaded_
+        || currentMediaSource_.trimmed().isEmpty()) {
+        if (subtitleRememberDelayForMediaCheckBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleRememberDelayForMediaCheckBox_);
+            subtitleRememberDelayForMediaCheckBox_->setChecked(false);
+        }
+        return;
+    }
+
+    const QString storageKey = rememberedSubtitleDelayStorageKeyForSource(currentMediaSource_);
+    const QString rawValue = storageKey.isEmpty() ? QString {} : settingsController_->customValue(storageKey).trimmed();
+    const bool hasRememberedValue = !rawValue.isEmpty();
+    if (subtitleRememberDelayForMediaCheckBox_ != nullptr) {
+        const QSignalBlocker blocker(subtitleRememberDelayForMediaCheckBox_);
+        subtitleRememberDelayForMediaCheckBox_->setChecked(hasRememberedValue);
+    }
+
+    if (!hasRememberedValue) {
+        if (subtitleDelayCustomSpinBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleDelayCustomSpinBox_);
+            subtitleDelayCustomSpinBox_->setValue(currentSubtitleDelaySeconds_);
+        }
+        return;
+    }
+
+    bool parsed = false;
+    const double rememberedDelay = rawValue.toDouble(&parsed);
+    if (!parsed) {
+        settingsController_->removeCustomValue(storageKey);
+        if (subtitleRememberDelayForMediaCheckBox_ != nullptr) {
+            const QSignalBlocker blocker(subtitleRememberDelayForMediaCheckBox_);
+            subtitleRememberDelayForMediaCheckBox_->setChecked(false);
+        }
+        return;
+    }
+
+    const double clampedDelay = std::clamp(rememberedDelay, -3600.0, 3600.0);
+    currentSubtitleDelaySeconds_ = clampedDelay;
+    playbackController_->setSubtitleDelay(clampedDelay);
+    if (subtitleDelayCustomSpinBox_ != nullptr) {
+        const QSignalBlocker blocker(subtitleDelayCustomSpinBox_);
+        subtitleDelayCustomSpinBox_->setValue(clampedDelay);
+    }
+    if (subtitleAutomationStatusLabel_ != nullptr) {
+        subtitleAutomationStatusLabel_->setText(uiText("Remembered subtitle delay applied: %1").arg(subtitleDelayDisplayText(clampedDelay)));
+    }
+}
+
 void MainWindow::adjustSubtitleDelayWithFeedback(const double deltaSeconds)
 {
     if (playbackController_ == nullptr || !mediaLoaded_) {
         return;
     }
 
-    const double targetDelay = currentSubtitleDelaySeconds_ + deltaSeconds;
-    playbackController_->setSubtitleDelay(targetDelay);
-    const QString text = QStringLiteral("Subtitle delay: %1")
-        .arg(revaplayer::application::formatSignedSeconds(targetDelay));
-    statusBar()->showMessage(text, 2500);
-    if (subtitleAutomationStatusLabel_ != nullptr) {
-        subtitleAutomationStatusLabel_->setText(text);
-    }
+    setSubtitleDelayWithFeedback(currentSubtitleDelaySeconds_ + deltaSeconds);
 }
 
 void MainWindow::resetSubtitleDelayWithFeedback()
@@ -14820,11 +15113,60 @@ void MainWindow::resetSubtitleDelayWithFeedback()
         return;
     }
 
-    playbackController_->resetSubtitleDelay();
-    const QString text = QStringLiteral("Subtitle delay reset");
+    setSubtitleDelayWithFeedback(0.0, true);
+}
+
+void MainWindow::showManualSubtitleDelayDialog()
+{
+    if (playbackController_ == nullptr || !mediaLoaded_) {
+        return;
+    }
+
+    const std::optional<double> delaySeconds = promptManualDelay(
+        this,
+        uiText("Set Subtitle Delay"),
+        uiText("Subtitle delay in seconds"),
+        currentSubtitleDelaySeconds_);
+    if (delaySeconds.has_value()) {
+        setSubtitleDelayWithFeedback(*delaySeconds);
+    }
+}
+
+void MainWindow::setAudioDelayWithFeedback(double delaySeconds, const bool resetRequested)
+{
+    if (playbackController_ == nullptr || !mediaLoaded_) {
+        return;
+    }
+
+    delaySeconds = std::clamp(delaySeconds, -3600.0, 3600.0);
+    if (resetRequested || std::abs(delaySeconds) < 0.0005) {
+        delaySeconds = 0.0;
+        playbackController_->resetAudioDelay();
+    } else {
+        playbackController_->setAudioDelay(delaySeconds);
+    }
+    currentAudioDelaySeconds_ = delaySeconds;
+
+    const QString text = resetRequested
+        ? uiText("Audio delay reset to %1").arg(revaplayer::application::formatSignedSeconds(0.0))
+        : uiText("Audio delay: %1").arg(revaplayer::application::formatSignedSeconds(delaySeconds));
     statusBar()->showMessage(text, 2500);
-    if (subtitleAutomationStatusLabel_ != nullptr) {
-        subtitleAutomationStatusLabel_->setText(text);
+    showPlaybackFeedback(text);
+}
+
+void MainWindow::showManualAudioDelayDialog()
+{
+    if (playbackController_ == nullptr || !mediaLoaded_) {
+        return;
+    }
+
+    const std::optional<double> delaySeconds = promptManualDelay(
+        this,
+        uiText("Set Audio Delay"),
+        uiText("Audio delay in seconds"),
+        currentAudioDelaySeconds_);
+    if (delaySeconds.has_value()) {
+        setAudioDelayWithFeedback(*delaySeconds);
     }
 }
 
@@ -14837,7 +15179,7 @@ void MainWindow::maybeAutoLoadMatchingLocalSubtitles()
     }
 
     const QString autoLoadMode = subtitleAutoLoadModeSetting();
-    if (autoLoadMode == QStringLiteral("disabled")) {
+    if (autoLoadMode == QStringLiteral("manual_only")) {
         localSubtitlesAutoLoadedForCurrentMedia_ = true;
         return;
     }
@@ -14873,11 +15215,11 @@ void MainWindow::maybeAutoLoadMatchingLocalSubtitles()
         }
 
         const int score = subtitleFileScore(candidate, baseName, preferredSubtitleLanguages());
-        const bool sameNameMatch = score >= 120;
-        const bool fuzzyMatch = score > 0;
-        const bool acceptCandidate = autoLoadMode == QStringLiteral("all")
-            || (autoLoadMode == QStringLiteral("same_name") && sameNameMatch)
-            || (autoLoadMode == QStringLiteral("fuzzy") && fuzzyMatch);
+        const bool sameNameOnlyMatch = subtitleMatchesSameNameOnly(candidate, baseName);
+        const bool sameNameWithLanguageSuffixMatch = subtitleMatchesSameNameWithLanguageSuffix(candidate, baseName);
+        const bool acceptCandidate = autoLoadMode == QStringLiteral("same_folder_any")
+            || (autoLoadMode == QStringLiteral("same_name_only") && sameNameOnlyMatch)
+            || (autoLoadMode == QStringLiteral("same_name_language") && sameNameWithLanguageSuffixMatch);
         if (acceptCandidate) {
             rankedFiles.push_back({score, candidate.absoluteFilePath()});
         }
@@ -14890,10 +15232,19 @@ void MainWindow::maybeAutoLoadMatchingLocalSubtitles()
         return left.second.localeAwareCompare(right.second) < 0;
     });
 
+    int maxAutoLoads = 1;
+    if (autoLoadMode == QStringLiteral("same_name_only")) {
+        maxAutoLoads = 2;
+    } else if (autoLoadMode == QStringLiteral("same_name_language")) {
+        maxAutoLoads = 3;
+    } else if (autoLoadMode == QStringLiteral("same_folder_any")) {
+        maxAutoLoads = 2;
+    }
+
     int loadedCount = 0;
     QStringList loadedNames;
     for (const auto &entry : rankedFiles) {
-        if (autoLoadMode != QStringLiteral("all") && loadedCount >= 2) {
+        if (loadedCount >= maxAutoLoads) {
             break;
         }
 
@@ -15945,335 +16296,6 @@ void MainWindow::toggleFavoriteCurrentMedia()
     updateActionStates();
 }
 
-void MainWindow::reloadScriptsPanel()
-{
-    if (scriptsList_ == nullptr) {
-        return;
-    }
-
-    const QString directoryPath = scriptsDirectoryPath(settingsController_);
-    QDir directory(directoryPath);
-    directory.mkpath(QStringLiteral("."));
-
-    scriptFilePaths_.clear();
-    scriptsList_->clear();
-
-    const QFileInfoList files = directory.entryInfoList(
-        QStringList {QStringLiteral("*.nppscript.json"), QStringLiteral("*.json")},
-        QDir::Files | QDir::NoDotAndDotDot,
-        QDir::Name);
-
-    for (const QFileInfo &fileInfo : files) {
-        PanelScript script;
-        if (!loadPanelScript(fileInfo.absoluteFilePath(), &script)) {
-            continue;
-        }
-
-        auto *item = new QListWidgetItem(script.name, scriptsList_);
-        item->setData(Qt::UserRole, script.path);
-        item->setData(Qt::UserRole + 1, script.script);
-        item->setToolTip(script.description.trimmed().isEmpty()
-                             ? script.path
-                             : QStringLiteral("%1\n%2").arg(script.description, script.path));
-        scriptFilePaths_.push_back(script.path);
-    }
-
-    if (scriptsStatusLabel_ != nullptr) {
-        scriptsStatusLabel_->setText(
-            scriptsList_->count() == 0
-                ? uiText("Scripts panel is empty. Import a local script file to extend the player.")
-                : uiText("Loaded %1 local script%2 from:\n%3")
-                      .arg(scriptsList_->count())
-                      .arg(scriptsList_->count() == 1 ? QString {} : QStringLiteral("s"))
-                      .arg(directory.absolutePath()));
-    }
-
-    if (scriptsList_->count() > 0) {
-        scriptsList_->setCurrentRow(0);
-    }
-}
-
-void MainWindow::runSelectedScript()
-{
-    if (scriptsList_ == nullptr || scriptsList_->currentItem() == nullptr || playbackController_ == nullptr) {
-        return;
-    }
-
-    QString errorMessage;
-    if (!playbackController_->executeCustomCommandScript(
-            scriptsList_->currentItem()->data(Qt::UserRole + 1).toString(),
-            &errorMessage)) {
-        statusBar()->showMessage(
-            errorMessage.isEmpty() ? uiText("The selected script could not run.") : errorMessage,
-            5000);
-        return;
-    }
-
-    statusBar()->showMessage(
-        uiText("Executed script: %1").arg(scriptsList_->currentItem()->text()),
-        2500);
-}
-
-void MainWindow::importScriptFile()
-{
-    const QString sourcePath = filedialog::getOpenFileName(
-        this,
-        uiText("Import Script"),
-        QDir::homePath(),
-        QStringLiteral("Script Files (*.json *.nppscript.json);;All Files (*)"));
-    if (sourcePath.trimmed().isEmpty()) {
-        return;
-    }
-
-    const QFileInfo sourceInfo(sourcePath);
-    const QString directoryPath = scriptsDirectoryPath(settingsController_);
-    QDir directory(directoryPath);
-    directory.mkpath(QStringLiteral("."));
-
-    QString targetName = sourceInfo.fileName();
-    if (!targetName.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
-        targetName += QStringLiteral(".nppscript.json");
-    }
-    const QString targetPath = directory.filePath(targetName);
-    QFile::remove(targetPath);
-    if (!QFile::copy(sourceInfo.absoluteFilePath(), targetPath)) {
-        statusBar()->showMessage(uiText("Could not import the selected script."), 4000);
-        return;
-    }
-
-    reloadScriptsPanel();
-    statusBar()->showMessage(uiText("Script imported"), 2500);
-}
-
-void MainWindow::exportSelectedScript() const
-{
-    if (scriptsList_ == nullptr || scriptsList_->currentItem() == nullptr) {
-        return;
-    }
-
-    const QString sourcePath = scriptsList_->currentItem()->data(Qt::UserRole).toString();
-    const QString targetPath = filedialog::getSaveFileName(
-        const_cast<MainWindow *>(this),
-        uiText("Export Script"),
-        QFileInfo(sourcePath).fileName(),
-        QStringLiteral("Script Files (*.json *.nppscript.json);;All Files (*)"));
-    if (targetPath.trimmed().isEmpty()) {
-        return;
-    }
-
-    QFile::remove(targetPath);
-    if (!QFile::copy(sourcePath, targetPath)) {
-        const_cast<MainWindow *>(this)->statusBar()->showMessage(uiText("Could not export the selected script."), 4000);
-        return;
-    }
-
-    const_cast<MainWindow *>(this)->statusBar()->showMessage(uiText("Script exported"), 2500);
-}
-
-void MainWindow::deleteSelectedScript()
-{
-    if (scriptsList_ == nullptr || scriptsList_->currentItem() == nullptr) {
-        return;
-    }
-
-    const QString sourcePath = scriptsList_->currentItem()->data(Qt::UserRole).toString();
-    if (QMessageBox::question(
-            this,
-            uiText("Delete Script"),
-            uiText("Remove the selected script from the local scripts panel?")) != QMessageBox::Yes) {
-        return;
-    }
-
-    if (!QFile::remove(sourcePath)) {
-        statusBar()->showMessage(uiText("Could not delete the selected script."), 4000);
-        return;
-    }
-
-    reloadScriptsPanel();
-    statusBar()->showMessage(uiText("Script deleted"), 2500);
-}
-
-void MainWindow::showCommandPalette()
-{
-    struct CommandEntry final {
-        QString title;
-        QString category;
-        QString detail;
-        QIcon icon;
-        std::function<void()> trigger;
-    };
-
-    QVector<CommandEntry> entries;
-    const auto iconForCategory = [this](const QString &category) {
-        if (style() == nullptr) {
-            return QIcon {};
-        }
-        if (category == uiText("File")) {
-            return style()->standardIcon(QStyle::SP_DialogOpenButton);
-        }
-        if (category == uiText("Panels")) {
-            return style()->standardIcon(QStyle::SP_FileDialogDetailedView);
-        }
-        if (category == uiText("Compare")) {
-            return style()->standardIcon(QStyle::SP_BrowserReload);
-        }
-        if (category == uiText("Capture")) {
-            return style()->standardIcon(QStyle::SP_DialogSaveButton);
-        }
-        if (category == uiText("Settings")) {
-            return style()->standardIcon(QStyle::SP_FileDialogContentsView);
-        }
-        if (category == uiText("Library") || category == uiText("Smart Playlists")) {
-            return style()->standardIcon(QStyle::SP_DirHomeIcon);
-        }
-        if (category == uiText("Scripts")) {
-            return style()->standardIcon(QStyle::SP_CommandLink);
-        }
-        return style()->standardIcon(QStyle::SP_MediaPlay);
-    };
-    const auto addActionEntry = [&entries, &iconForCategory](QAction *action, const QString &category) {
-        if (action == nullptr) {
-            return;
-        }
-        entries.push_back(CommandEntry {
-            action->text().remove(QLatin1Char('&')),
-            category,
-            action->shortcut().toString(QKeySequence::NativeText),
-            iconForCategory(category),
-            [action]() {
-                action->trigger();
-            },
-        });
-    };
-
-    addActionEntry(openFileAction_, uiText("File"));
-    addActionEntry(openFolderAction_, uiText("File"));
-    addActionEntry(openUrlAction_, uiText("File"));
-    addActionEntry(showMediaInfoAction_, uiText("Playback"));
-    addActionEntry(preferencesAction_, uiText("Settings"));
-    addActionEntry(closeApplicationAction_, uiText("File"));
-    addActionEntry(showScriptsPanelAction_, uiText("Tools"));
-    addActionEntry(favoriteCurrentMediaAction_, uiText("Library"));
-    addActionEntry(togglePlaylistAction_, uiText("Panels"));
-    addActionEntry(toggleDetailsAction_, uiText("Panels"));
-
-    for (qsizetype index = 0; index < customCommands_.size(); ++index) {
-        const QString label = customCommands_.at(index).name.trimmed().isEmpty()
-            ? uiText("Custom Command %1").arg(index + 1)
-            : customCommands_.at(index).name.trimmed();
-        entries.push_back(CommandEntry {
-            label,
-            uiText("Custom Commands"),
-            QStringLiteral("#%1").arg(index + 1),
-            iconForCategory(uiText("Custom Commands")),
-            [this, index]() {
-                executeCustomCommandAtIndex(static_cast<int>(index));
-            },
-        });
-    }
-
-    for (const QString &scriptPath : scriptFilePaths_) {
-        PanelScript script;
-        if (!loadPanelScript(scriptPath, &script)) {
-            continue;
-        }
-        entries.push_back(CommandEntry {
-            script.name,
-            uiText("Scripts"),
-            script.description,
-            iconForCategory(uiText("Scripts")),
-            [this, script]() {
-                QString errorMessage;
-                playbackController_->executeCustomCommandScript(script.script, &errorMessage);
-            },
-        });
-    }
-
-    if (settingsController_ != nullptr) {
-        const QStringList ruleKeys = settingsController_->customKeys(QString::fromLatin1(kSmartPlaylistRulePrefix));
-        for (const QString &ruleKey : ruleKeys) {
-            const QJsonObject ruleObject = QJsonDocument::fromJson(settingsController_->customValue(ruleKey).toUtf8()).object();
-            const QString label = ruleObject.value(QStringLiteral("name")).toString().trimmed();
-            entries.push_back(CommandEntry {
-                label.isEmpty() ? decodeSettingKeySegment(ruleKey.mid(QString::fromLatin1(kSmartPlaylistRulePrefix).size())) : label,
-                uiText("Smart Playlists"),
-                ruleObject.value(QStringLiteral("kind")).toString(),
-                iconForCategory(uiText("Smart Playlists")),
-                [this, ruleKey]() {
-                    loadSmartPlaylistRule(ruleKey);
-                },
-            });
-        }
-    }
-    QDialog dialog(this);
-    dialog.setWindowTitle(uiText("Command Palette"));
-    dialog.setModal(true);
-    dialog.resize(640, 520);
-
-    auto *layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(10);
-
-    auto *searchEdit = new QLineEdit(&dialog);
-    searchEdit->setPlaceholderText(uiText("Search commands, scripts, playlists, and tools"));
-    auto *resultsList = new QListWidget(&dialog);
-    resultsList->setSelectionMode(QAbstractItemView::SingleSelection);
-    auto *hintLabel = new QLabel(uiText("Press Enter to run the selected command."), &dialog);
-    hintLabel->setWordWrap(true);
-
-    layout->addWidget(searchEdit, 0);
-    layout->addWidget(resultsList, 1);
-    layout->addWidget(hintLabel, 0);
-
-    const auto rebuildResults = [&entries, resultsList](const QString &query) {
-        resultsList->clear();
-        const QString needle = query.trimmed().toLower();
-        for (qsizetype index = 0; index < entries.size(); ++index) {
-            const auto &entry = entries.at(index);
-            const QString haystack = QStringLiteral("%1 %2 %3")
-                .arg(entry.title, entry.category, entry.detail)
-                .toLower();
-            if (!needle.isEmpty() && !haystack.contains(needle)) {
-                continue;
-            }
-
-            auto *item = new QListWidgetItem(
-                entry.detail.trimmed().isEmpty()
-                    ? QStringLiteral("[%1] %2").arg(entry.category, entry.title)
-                    : QStringLiteral("[%1] %2  •  %3").arg(entry.category, entry.title, entry.detail),
-                resultsList);
-            item->setIcon(entry.icon);
-            item->setToolTip(item->text());
-            item->setData(Qt::UserRole, static_cast<int>(index));
-        }
-
-        if (resultsList->count() > 0) {
-            resultsList->setCurrentRow(0);
-        }
-    };
-
-    connect(searchEdit, &QLineEdit::textChanged, &dialog, rebuildResults);
-    connect(resultsList, &QListWidget::itemActivated, &dialog, [&dialog, &entries](QListWidgetItem *item) {
-        if (item == nullptr) {
-            return;
-        }
-        const int index = item->data(Qt::UserRole).toInt();
-        if (index >= 0 && index < entries.size() && entries.at(index).trigger) {
-            entries.at(index).trigger();
-            dialog.accept();
-        }
-    });
-    connect(searchEdit, &QLineEdit::returnPressed, &dialog, [resultsList]() {
-        if (resultsList->currentItem() != nullptr) {
-            emit resultsList->itemActivated(resultsList->currentItem());
-        }
-    });
-
-    rebuildResults(QString {});
-    searchEdit->setFocus();
-    dialog.exec();
-}
-
 void MainWindow::openCompareSource()
 {
     if (comparePlaybackController_ == nullptr) {
@@ -16284,7 +16306,7 @@ void MainWindow::openCompareSource()
         this,
         uiText("Open Compare Source"),
         settingsController_ != nullptr ? settingsController_->lastOpenDirectory() : QDir::homePath(),
-        QStringLiteral("Media Files (*.mkv *.mp4 *.webm *.avi *.mov *.mp3 *.flac *.wav *.m4a *.ogg);;All Files (*)"));
+        uiText("Media Files (*.mkv *.mp4 *.webm *.avi *.mov *.mp3 *.flac *.wav *.m4a *.ogg);;All Files (*)"));
     if (filePath.trimmed().isEmpty()) {
         return;
     }
@@ -16293,7 +16315,7 @@ void MainWindow::openCompareSource()
     compareSourceLoaded_ = false;
     comparePrimaryVisible_ = true;
     if (compareVideoViewport_ != nullptr) {
-        compareVideoViewport_->setOverlayText(uiText("Loading compare source..."));
+        compareVideoViewport_->setOverlayText(uiText("Loading compare source"));
         compareVideoViewport_->setOverlayVisible(true);
     }
     comparePlaybackController_->openFiles(QStringList {compareSource_});
@@ -17170,8 +17192,16 @@ void MainWindow::updateControlBarPresentationMode()
             styleEngine->unpolish(controlBar_);
             styleEngine->polish(controlBar_);
         }
+        controlBar_->refreshPresentation();
         controlBar_->update();
     }
+
+    controlBar_->ensurePolished();
+    if (QLayout *barLayout = controlBar_->layout(); barLayout != nullptr) {
+        barLayout->invalidate();
+        barLayout->activate();
+    }
+    controlBar_->updateGeometry();
 }
 
 QRect MainWindow::overlaySidePanelGeometry() const
@@ -17313,6 +17343,11 @@ void MainWindow::updateVideoOverlayGeometry()
     }
 
     if (controlBar_ != nullptr && controlBar_->parentWidget() == videoViewport_) {
+        controlBar_->ensurePolished();
+        controlBar_->refreshPresentation();
+        if (QLayout *barLayout = controlBar_->layout(); barLayout != nullptr) {
+            barLayout->activate();
+        }
         const int controlWidth = std::clamp(
             videoViewport_->width() - (horizontalMargin * 2),
             440,
@@ -18151,16 +18186,6 @@ void MainWindow::updateActionStates()
     if (deleteBookmarkAction_ != nullptr) {
         deleteBookmarkAction_->setEnabled(bookmarksList_ != nullptr && bookmarksList_->currentItem() != nullptr);
     }
-    if (scriptsRunButton_ != nullptr) {
-        scriptsRunButton_->setEnabled(scriptsList_ != nullptr && scriptsList_->currentRow() >= 0);
-    }
-    if (scriptsExportButton_ != nullptr) {
-        scriptsExportButton_->setEnabled(scriptsList_ != nullptr && scriptsList_->currentRow() >= 0);
-    }
-    if (scriptsDeleteButton_ != nullptr) {
-        scriptsDeleteButton_->setEnabled(scriptsList_ != nullptr && scriptsList_->currentRow() >= 0);
-    }
-
     if (showMediaInfoAction_ != nullptr) {
         showMediaInfoAction_->setEnabled(playbackAvailable);
     }
@@ -18184,6 +18209,7 @@ void MainWindow::updateActionStates()
                             subtitleDelayDownAction_,
                             subtitleDelayUpAction_,
                             subtitleDelayResetAction_,
+                            subtitleDelayManualAction_,
                             subtitleScaleDownAction_,
                             subtitleScaleUpAction_,
                             subtitleScaleResetAction_,
@@ -18193,7 +18219,8 @@ void MainWindow::updateActionStates()
                             cycleSubtitleAssOverrideAction_,
                             audioDelayDownAction_,
                             audioDelayUpAction_,
-                            audioDelayResetAction_}) {
+                            audioDelayResetAction_,
+                            audioDelayManualAction_}) {
         if (action != nullptr) {
             action->setEnabled(playbackAvailable);
         }
@@ -18450,76 +18477,6 @@ QString MainWindow::effectiveCurrentMediaTitle() const
     }
 
     return displayTitleForHistory(source, QString {});
-}
-
-void MainWindow::rebuildCustomCommandsMenu()
-{
-    if (customCommandsMenu_ == nullptr) {
-        return;
-    }
-
-    customCommandsMenu_->clear();
-    if (customCommands_.isEmpty()) {
-        QAction *emptyAction = customCommandsMenu_->addAction(uiText("No Custom Commands Configured"));
-        emptyAction->setEnabled(false);
-    } else {
-        for (qsizetype index = 0; index < customCommands_.size(); ++index) {
-            const auto &command = customCommands_.at(index);
-            const QString label = command.name.trimmed().isEmpty()
-                ? QStringLiteral("Custom Command %1").arg(index + 1)
-                : command.name.trimmed();
-            QAction *action = customCommandsMenu_->addAction(label);
-            connect(action, &QAction::triggered, this, [this, index]() {
-                executeCustomCommandAtIndex(static_cast<int>(index));
-            });
-        }
-    }
-
-    const auto updateSlotAction = [this](QAction *action, const int index) {
-        if (action == nullptr) {
-            return;
-        }
-
-        const bool hasCommand = index >= 0 && index < customCommands_.size();
-        const QString label = hasCommand
-            ? uiText("Run Custom Command %1: %2")
-                  .arg(index + 1)
-                  .arg(customCommands_.at(index).name.trimmed().isEmpty()
-                           ? uiText("Unnamed")
-                           : customCommands_.at(index).name.trimmed())
-            : uiText("Run Custom Command Slot %1").arg(index + 1);
-        action->setText(label);
-        action->setEnabled(hasCommand);
-    };
-
-    updateSlotAction(customCommandSlot1Action_, 0);
-    updateSlotAction(customCommandSlot2Action_, 1);
-    updateSlotAction(customCommandSlot3Action_, 2);
-    updateSlotAction(customCommandSlot4Action_, 3);
-    updateSlotAction(customCommandSlot5Action_, 4);
-}
-
-void MainWindow::executeCustomCommandAtIndex(const int index)
-{
-    if (index < 0 || index >= customCommands_.size()) {
-        statusBar()->showMessage(uiText("Custom command slot is empty."), 3000);
-        return;
-    }
-
-    const auto &command = customCommands_.at(index);
-    const QString displayName = command.name.trimmed().isEmpty()
-        ? QStringLiteral("Custom Command %1").arg(index + 1)
-        : command.name.trimmed();
-
-    QString errorMessage;
-    if (!playbackController_->executeCustomCommandScript(command.script, &errorMessage)) {
-        statusBar()->showMessage(
-            uiText("Custom command failed: %1").arg(errorMessage.isEmpty() ? displayName : errorMessage),
-            5000);
-        return;
-    }
-
-    statusBar()->showMessage(uiText("Ran custom command: %1").arg(displayName), 3000);
 }
 
 void MainWindow::reloadCurrentFolderPlaylist()
@@ -19239,12 +19196,20 @@ QVector<revaplayer::ui::ShortcutBinding> MainWindow::buildShortcutBindings() con
             continue;
         }
 
+        const QString overrideSequence = settingsController_ != nullptr
+            ? settingsController_->shortcutOverride(QString::fromLatin1(definition.id))
+            : QString {};
+        const QKeySequence defaultSequence = portableShortcut(definition.defaultSequence);
+        const QKeySequence effectiveSequence = overrideSequence.trimmed().isEmpty()
+            ? defaultSequence
+            : QKeySequence(overrideSequence, QKeySequence::PortableText);
+
         bindings.push_back(revaplayer::ui::ShortcutBinding {
             QString::fromLatin1(definition.id),
             shortcutCategoryForId(QString::fromLatin1(definition.id)),
             revaplayer::application::translateUiText(QString::fromLatin1(definition.label)),
-            portableShortcut(definition.defaultSequence),
-            action->shortcut(),
+            defaultSequence,
+            effectiveSequence,
         });
     }
 
@@ -19253,6 +19218,124 @@ QVector<revaplayer::ui::ShortcutBinding> MainWindow::buildShortcutBindings() con
 
 QAction *MainWindow::actionForShortcutId(const QString &shortcutId) const
 {
+    if (shortcutId == QStringLiteral("open_file_alt")) {
+        return openFileAction_;
+    }
+    if (shortcutId == QStringLiteral("open_folder_alt")) {
+        return openFolderAction_;
+    }
+    if (shortcutId == QStringLiteral("open_url_alt")) {
+        return openUrlAction_;
+    }
+    if (shortcutId == QStringLiteral("open_preferences_alt")) {
+        return preferencesAction_;
+    }
+    if (shortcutId == QStringLiteral("show_media_info_alt")) {
+        return showMediaInfoAction_;
+    }
+    if (shortcutId == QStringLiteral("play_pause_alt")) {
+        return playPauseAction_;
+    }
+    if (shortcutId == QStringLiteral("stop_alt")) {
+        return stopAction_;
+    }
+    if (shortcutId == QStringLiteral("take_screenshot_alt")) {
+        return takeScreenshotAction_;
+    }
+    if (shortcutId == QStringLiteral("add_bookmark_alt")) {
+        return addBookmarkAction_;
+    }
+    if (shortcutId == QStringLiteral("speed_down_alt")) {
+        return speedDownAction_;
+    }
+    if (shortcutId == QStringLiteral("speed_up_alt")) {
+        return speedUpAction_;
+    }
+    if (shortcutId == QStringLiteral("speed_reset_alt")) {
+        return speedResetAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_delay_down_alt")) {
+        return subtitleDelayDownAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_delay_up_alt")) {
+        return subtitleDelayUpAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_delay_reset_alt")) {
+        return subtitleDelayResetAction_;
+    }
+    if (shortcutId == QStringLiteral("audio_delay_down_alt")) {
+        return audioDelayDownAction_;
+    }
+    if (shortcutId == QStringLiteral("audio_delay_up_alt")) {
+        return audioDelayUpAction_;
+    }
+    if (shortcutId == QStringLiteral("audio_delay_reset_alt")) {
+        return audioDelayResetAction_;
+    }
+    if (shortcutId == QStringLiteral("toggle_playlist_alt")) {
+        return togglePlaylistAction_;
+    }
+    if (shortcutId == QStringLiteral("toggle_details_alt")) {
+        return toggleDetailsAction_;
+    }
+    if (shortcutId == QStringLiteral("toggle_fullscreen_alt")) {
+        return toggleFullscreenAction_;
+    }
+    if (shortcutId == QStringLiteral("previous_playlist_alt")) {
+        return previousPlaylistAction_;
+    }
+    if (shortcutId == QStringLiteral("next_playlist_alt")) {
+        return nextPlaylistAction_;
+    }
+    if (shortcutId == QStringLiteral("previous_chapter_alt")) {
+        return previousChapterAction_;
+    }
+    if (shortcutId == QStringLiteral("next_chapter_alt")) {
+        return nextChapterAction_;
+    }
+    if (shortcutId == QStringLiteral("seek_backward_short_alt")) {
+        return seekBackwardShortAction_;
+    }
+    if (shortcutId == QStringLiteral("seek_forward_short_alt")) {
+        return seekForwardShortAction_;
+    }
+    if (shortcutId == QStringLiteral("seek_backward_long_alt")) {
+        return seekBackwardLongAction_;
+    }
+    if (shortcutId == QStringLiteral("seek_forward_long_alt")) {
+        return seekForwardLongAction_;
+    }
+    if (shortcutId == QStringLiteral("volume_down_alt")) {
+        return volumeDownAction_;
+    }
+    if (shortcutId == QStringLiteral("volume_up_alt")) {
+        return volumeUpAction_;
+    }
+    if (shortcutId == QStringLiteral("toggle_mute_alt")) {
+        return toggleMuteAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_scale_down_alt")) {
+        return subtitleScaleDownAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_scale_up_alt")) {
+        return subtitleScaleUpAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_position_up_alt")) {
+        return subtitlePositionUpAction_;
+    }
+    if (shortcutId == QStringLiteral("subtitle_position_down_alt")) {
+        return subtitlePositionDownAction_;
+    }
+    if (shortcutId == QStringLiteral("video_zoom_out_alt")) {
+        return videoZoomOutAction_;
+    }
+    if (shortcutId == QStringLiteral("video_zoom_in_alt")) {
+        return videoZoomInAction_;
+    }
+    if (shortcutId == QStringLiteral("video_zoom_reset_alt")) {
+        return videoZoomResetAction_;
+    }
+
     if (shortcutId == QStringLiteral("open_file")) {
         return openFileAction_;
     }
@@ -19297,30 +19380,6 @@ QAction *MainWindow::actionForShortcutId(const QString &shortcutId) const
     }
     if (shortcutId == QStringLiteral("close_application")) {
         return closeApplicationAction_;
-    }
-    if (shortcutId == QStringLiteral("command_palette")) {
-        return commandPaletteAction_;
-    }
-    if (shortcutId == QStringLiteral("show_scripts_panel")) {
-        return showScriptsPanelAction_;
-    }
-    if (shortcutId == QStringLiteral("reset_window_layout")) {
-        return resetLayoutAction_;
-    }
-    if (shortcutId == QStringLiteral("custom_command_slot_1")) {
-        return customCommandSlot1Action_;
-    }
-    if (shortcutId == QStringLiteral("custom_command_slot_2")) {
-        return customCommandSlot2Action_;
-    }
-    if (shortcutId == QStringLiteral("custom_command_slot_3")) {
-        return customCommandSlot3Action_;
-    }
-    if (shortcutId == QStringLiteral("custom_command_slot_4")) {
-        return customCommandSlot4Action_;
-    }
-    if (shortcutId == QStringLiteral("custom_command_slot_5")) {
-        return customCommandSlot5Action_;
     }
     if (shortcutId == QStringLiteral("play_pause")) {
         return playPauseAction_;
@@ -19918,23 +19977,23 @@ bool MainWindow::subtitlePreferExternal() const
 
 bool MainWindow::subtitleAutoLoadLocalMatchesEnabled() const
 {
-    return subtitleAutoLoadModeSetting() != QStringLiteral("disabled");
+    return subtitleAutoLoadModeSetting() != QStringLiteral("manual_only");
 }
 
 QString MainWindow::subtitleAutoLoadModeSetting() const
 {
     if (settingsController_ == nullptr) {
-        return QStringLiteral("same_name");
+        return QStringLiteral("same_name_only");
     }
 
     const QString configuredMode = revaplayer::application::normalizeSubtitleAutoLoadMode(
         settingsController_->customValue(
             QString::fromLatin1(revaplayer::application::kSubtitleAutoLoadModeSetting),
             settingsController_->subtitleAutoLoadLocalMatches()
-                ? QStringLiteral("same_name")
-                : QStringLiteral("disabled")));
+                ? QStringLiteral("same_name_only")
+                : QStringLiteral("manual_only")));
     if (!settingsController_->subtitleAutoLoadLocalMatches()) {
-        return QStringLiteral("disabled");
+        return QStringLiteral("manual_only");
     }
     return configuredMode;
 }
@@ -19964,11 +20023,6 @@ QSet<QString> MainWindow::subtitleAutoLoadExtensionsSetting() const
 double MainWindow::subtitleSyncSmallStep() const
 {
     return settingsController_ != nullptr ? settingsController_->subtitleSyncSmallStep() : 0.25;
-}
-
-double MainWindow::subtitleSyncLargeStep() const
-{
-    return settingsController_ != nullptr ? settingsController_->subtitleSyncLargeStep() : 1.0;
 }
 
 QString MainWindow::subtitleDownloadCommandTemplate() const
@@ -22190,6 +22244,7 @@ void MainWindow::showFirstRunWizardIfNeeded()
 
     firstRunPromptShown_ = true;
     if (customSettingFlag(settingsController_, kFirstRunCompletedSetting, false)) {
+        updateHomeDashboardVisibility();
         return;
     }
 
@@ -22200,8 +22255,9 @@ void MainWindow::showFirstRunWizardIfNeeded()
     if (dialog.exec() != QDialog::Accepted) {
         revaplayer::application::setCurrentUiLanguage(previousLanguage);
         QApplication::setLayoutDirection(previousDirection);
-        QLocale::setDefault(QLocale(previousLanguage));
+        QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
         settingsController_->setCustomValue(QString::fromLatin1(kFirstRunCompletedSetting), QStringLiteral("1"));
+        updateHomeDashboardVisibility();
         return;
     }
 
@@ -22211,12 +22267,16 @@ void MainWindow::showFirstRunWizardIfNeeded()
     const QString appliedLanguage = settingsController_->interfaceLanguage();
     revaplayer::application::setCurrentUiLanguage(appliedLanguage);
     QApplication::setLayoutDirection(revaplayer::application::currentUiLanguageDirection());
-    QLocale::setDefault(QLocale(appliedLanguage));
+    QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
     applySelectedTheme(false);
     applyUiPreferences();
+    if (menuBar() != nullptr) {
+        menuBar()->clear();
+        setupMenuBar();
+    }
     refreshPlaylistPresentationData();
     rebuildPinnedCourseTabs();
-    reloadHomeDashboard();
+    reloadHomeDashboard(true);
     updateHomeDashboardVisibility();
 }
 

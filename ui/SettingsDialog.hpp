@@ -2,8 +2,6 @@
 
 #include "ui/ShortcutBinding.hpp"
 
-#include "domain/CustomCommand.hpp"
-
 #include <QDialog>
 
 class QCheckBox;
@@ -13,8 +11,6 @@ class QFontComboBox;
 class QLineEdit;
 class QLabel;
 class QKeySequenceEdit;
-class QListWidget;
-class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
 class QSpinBox;
@@ -42,6 +38,7 @@ signals:
     void settingsApplied();
     void clearCacheRequested();
     void factoryResetRequested();
+    void loadSubtitleFileRequested();
     void subtitlePreviewRequested(bool visible,
                                   double scale,
                                   int position,
@@ -51,6 +48,7 @@ signals:
 
 protected:
     void accept() override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     struct ShortcutEditorRow {
@@ -64,25 +62,18 @@ private:
 
     void buildUi();
     void loadSettings();
-    void commitCustomCommandEditor();
-    void refreshCustomCommandsList();
-    void loadCustomCommandIntoEditor(int index);
     void refreshShortcutEditorState();
     void refreshSettingsSearchState();
-    void syncSubtitlePreviewVisibility();
     void refreshSubtitlePreviewSample();
     void emitSubtitlePreviewState();
     [[nodiscard]] bool applyIfValid(QString *errorMessage = nullptr);
     [[nodiscard]] bool validateShortcuts(QString *errorMessage) const;
-    [[nodiscard]] bool validateCustomCommands(QString *errorMessage);
 
     revaplayer::application::SettingsController *settingsController_ {nullptr};
     revaplayer::application::HistoryController *historyController_ {nullptr};
     QVector<revaplayer::ui::ShortcutBinding> shortcutBindings_;
     QVector<ShortcutEditorRow> shortcutEditors_;
     QVector<QWidget *> settingsPageContents_;
-    QVector<revaplayer::domain::CustomCommand> customCommands_;
-    int currentCustomCommandIndex_ {-1};
     QCheckBox *rememberWindowStateCheckBox_ {nullptr};
     QCheckBox *rememberLastDirectoryCheckBox_ {nullptr};
     QCheckBox *resumePlaybackCheckBox_ {nullptr};
@@ -117,7 +108,6 @@ private:
     QCheckBox *fullscreenAutoHideCheckBox_ {nullptr};
     QCheckBox *pointerKeepControlsVisibleCheckBox_ {nullptr};
     QCheckBox *dashboardEnabledCheckBox_ {nullptr};
-    QCheckBox *dashboardShowOnIdleCheckBox_ {nullptr};
     QCheckBox *dashboardShowContinueCheckBox_ {nullptr};
     QCheckBox *dashboardShowRecentCheckBox_ {nullptr};
     QCheckBox *dashboardShowFavoritesCheckBox_ {nullptr};
@@ -226,7 +216,6 @@ private:
     QDoubleSpinBox *videoMaximumZoomSpinBox_ {nullptr};
     QDoubleSpinBox *videoPanSensitivitySpinBox_ {nullptr};
     QDoubleSpinBox *subtitleSyncSmallStepSpinBox_ {nullptr};
-    QDoubleSpinBox *subtitleSyncLargeStepSpinBox_ {nullptr};
     QDoubleSpinBox *subtitleOutlineSizeSpinBox_ {nullptr};
     QDoubleSpinBox *subtitleShadowOffsetSpinBox_ {nullptr};
     QDoubleSpinBox *subtitleShadowBlurSpinBox_ {nullptr};
@@ -239,12 +228,9 @@ private:
     QSpinBox *subtitleBackgroundOpacitySpinBox_ {nullptr};
     QSpinBox *subtitleMarginXSpinBox_ {nullptr};
     QSpinBox *subtitleMarginYSpinBox_ {nullptr};
-    QWidget *subtitlePreviewGroup_ {nullptr};
     QLineEdit *subtitlePreferredLanguagesEdit_ {nullptr};
     QLineEdit *subtitleAutoExtensionsEdit_ {nullptr};
-    QLineEdit *subtitleDownloadCommandEdit_ {nullptr};
-    QLabel *subtitlePreviewSampleLabel_ {nullptr};
-    QLabel *subtitlePreviewModeLabel_ {nullptr};
+    QPushButton *resetSubtitleStyleQuickButton_ {nullptr};
     QPushButton *subtitleTextColorButton_ {nullptr};
     QPushButton *subtitleOutlineColorButton_ {nullptr};
     QPushButton *subtitleBackgroundColorButton_ {nullptr};
@@ -262,16 +248,12 @@ private:
     QLineEdit *screenshotTemplateEdit_ {nullptr};
     QLineEdit *settingsSearchEdit_ {nullptr};
     QLineEdit *shortcutSearchEdit_ {nullptr};
-    QListWidget *customCommandsList_ {nullptr};
-    QLineEdit *customCommandNameEdit_ {nullptr};
-    QPlainTextEdit *customCommandScriptEdit_ {nullptr};
-    QPushButton *addCustomCommandButton_ {nullptr};
-    QPushButton *duplicateCustomCommandButton_ {nullptr};
-    QPushButton *removeCustomCommandButton_ {nullptr};
     QPushButton *clearHistoryButton_ {nullptr};
     QPushButton *clearCacheButton_ {nullptr};
+    QPushButton *resetSettingsButton_ {nullptr};
     QPushButton *factoryResetButton_ {nullptr};
-    QPushButton *resetVideoZoomSettingsButton_ {nullptr};
+    QPushButton *applyButton_ {nullptr};
+    bool settingsDirty_ {false};
     QPushButton *resetSubtitleAppearanceButton_ {nullptr};
     QPushButton *settingsSearchButton_ {nullptr};
     QPushButton *settingsSearchClearButton_ {nullptr};

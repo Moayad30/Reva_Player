@@ -441,6 +441,113 @@ copy_optional_platform_theme_plugins() {
     done
 }
 
+find_system_library() {
+    local library_name="$1"
+    local detected_path=""
+
+    if command -v ldconfig >/dev/null 2>&1; then
+        detected_path="$(ldconfig -p 2>/dev/null | awk -v library_name="${library_name}" '$1 == library_name { print $NF; exit }')"
+        if [ -f "${detected_path}" ]; then
+            printf '%s\n' "${detected_path}"
+            return 0
+        fi
+    fi
+
+    local root_dir=""
+    for root_dir in \
+        /lib64 \
+        /usr/lib64 \
+        /usr/lib64/samba \
+        /lib/x86_64-linux-gnu \
+        /usr/lib/x86_64-linux-gnu \
+        /lib/aarch64-linux-gnu \
+        /usr/lib/aarch64-linux-gnu; do
+        if [ -f "${root_dir}/${library_name}" ]; then
+            printf '%s\n' "${root_dir}/${library_name}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+restore_system_runtime_payload() {
+    if [ -f "${build_dir}/${APP_BINARY_NAME}" ]; then
+        cp -f "${build_dir}/${APP_BINARY_NAME}" "${packaged_binary_path}"
+    fi
+
+    local file_path=""
+    local library_name=""
+    local source_path=""
+    if [ -d "${appdir}/usr/lib" ]; then
+        while IFS= read -r -d '' file_path; do
+            library_name="$(basename -- "${file_path}")"
+            source_path="$(find_system_library "${library_name}" || true)"
+            if [ -f "${source_path}" ]; then
+                cp -f "${source_path}" "${file_path}"
+            fi
+        done < <(find "${appdir}/usr/lib" -maxdepth 1 -type f -print0)
+    fi
+
+    if [ -n "${qt_plugins_dir}" ] && [ -d "${qt_plugins_dir}" ] && [ -d "${appdir}/usr/plugins" ]; then
+        local relative_path=""
+        while IFS= read -r -d '' file_path; do
+            relative_path="${file_path#${appdir}/usr/plugins/}"
+            source_path="${qt_plugins_dir}/${relative_path}"
+            if [ -f "${source_path}" ]; then
+                cp -f "${source_path}" "${file_path}"
+            fi
+        done < <(find "${appdir}/usr/plugins" -type f -name '*.so' -print0)
+    fi
+}
+
+should_keep_runtime_library() {
+    local library_name="$1"
+
+    case "${library_name}" in
+        libQt6*.so.6*|\
+        libmpv.so.2*|\
+        libavcodec.so.*|\
+        libavdevice.so.*|\
+        libavfilter.so.*|\
+        libavformat.so.*|\
+        libavutil.so.*|\
+        libswresample.so.*|\
+        libswscale.so.*|\
+        libass.so.*|\
+        libbluray.so.*|\
+        libcdio*.so.*|\
+        libdvd*.so.*|\
+        liblcms2.so.*|\
+        liblua-5.1.so*|\
+        libmujs.so.*|\
+        libplacebo.so.*|\
+        librubberband.so.*|\
+        libsqlite3.so.*|\
+        libuchardet.so.*|\
+        libzimg.so.*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+prune_runtime_libraries() {
+    local library_dir="${appdir}/usr/lib"
+    [ -d "${library_dir}" ] || return 0
+
+    local file_path=""
+    local library_name=""
+    while IFS= read -r -d '' file_path; do
+        library_name="$(basename -- "${file_path}")"
+        if ! should_keep_runtime_library "${library_name}"; then
+            rm -f "${file_path}"
+        fi
+    done < <(find "${library_dir}" -maxdepth 1 -type f -print0)
+}
+
 prune_appdir_payload() {
     rm -rf "${appdir}/usr/share/doc" \
            "${appdir}/usr/share/man" \
@@ -643,6 +750,7 @@ EOF
 chmod +x "${linuxdeploy_shim_dir}/linuxdeploy-plugin-qt"
 
 PATH="${linuxdeploy_shim_dir}:${PATH}" \
+NO_STRIP="${NO_STRIP:-1}" \
 QMAKE="${qmake_path}" \
 "${linuxdeploy_runner}" \
     --appdir "${appdir}" \
@@ -659,8 +767,12 @@ copy_supported_qt_translations "${qt_translations_dir}"
 copy_optional_qt_runtime_libraries
 write_qt_conf "${appdir}/usr/bin/qt.conf"
 
+restore_system_runtime_payload
+prune_runtime_libraries
 prune_appdir_payload
-strip_elf_files "${appdir}"
+if [ "${REVAPLAYER_APPIMAGE_STRIP:-0}" = "1" ]; then
+    strip_elf_files "${appdir}"
+fi
 verify_no_unresolved_elf_dependencies "${appdir}"
 
 ln -sfn "usr/bin/${APP_BINARY_NAME}" "${appdir}/AppRun"

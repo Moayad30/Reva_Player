@@ -17,7 +17,7 @@
 namespace revaplayer::infrastructure::storage {
 namespace {
 
-constexpr int kCurrentSchemaVersion = 3;
+constexpr int kCurrentSchemaVersion = 4;
 constexpr auto kDatabaseFileName = "revaplayer.sqlite";
 
 QString normalizedPlayableStoredSource(const QString &source)
@@ -701,86 +701,6 @@ bool SqliteStore::deleteBookmark(const qint64 bookmarkId) const
     return true;
 }
 
-QVector<revaplayer::domain::CustomCommand> SqliteStore::loadCustomCommands() const
-{
-    QVector<revaplayer::domain::CustomCommand> commands;
-    if (!initialized_) {
-        return commands;
-    }
-
-    QSqlQuery query(QSqlDatabase::database(connectionName_, false));
-    query.prepare(QStringLiteral(
-        "SELECT id, name, script "
-        "FROM custom_commands "
-        "ORDER BY position ASC, id ASC"));
-
-    if (!query.exec()) {
-        const_cast<SqliteStore *>(this)->setLastError(query.lastError().text());
-        return commands;
-    }
-
-    while (query.next()) {
-        revaplayer::domain::CustomCommand command;
-        command.id = query.value(0).toLongLong();
-        command.name = query.value(1).toString();
-        command.script = query.value(2).toString();
-        commands.push_back(std::move(command));
-    }
-
-    return commands;
-}
-
-bool SqliteStore::replaceCustomCommands(const QVector<revaplayer::domain::CustomCommand> &commands)
-{
-    if (!ensureReady()) {
-        return false;
-    }
-
-    QSqlDatabase database = QSqlDatabase::database(connectionName_, false);
-    if (!database.transaction()) {
-        setLastError(database.lastError().text());
-        return false;
-    }
-
-    QSqlQuery clearQuery(database);
-    if (!clearQuery.exec(QStringLiteral("DELETE FROM custom_commands"))) {
-        setLastError(clearQuery.lastError().text());
-        database.rollback();
-        return false;
-    }
-
-    const QString timestamp = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-    QSqlQuery insertQuery(database);
-    insertQuery.prepare(QStringLiteral(
-        "INSERT INTO custom_commands(position, name, script, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)"));
-
-    for (qsizetype index = 0; index < commands.size(); ++index) {
-        const auto &command = commands.at(index);
-        insertQuery.addBindValue(static_cast<int>(index));
-        insertQuery.addBindValue(command.name.trimmed());
-        insertQuery.addBindValue(command.script);
-        insertQuery.addBindValue(timestamp);
-        insertQuery.addBindValue(timestamp);
-
-        if (!insertQuery.exec()) {
-            setLastError(insertQuery.lastError().text());
-            database.rollback();
-            return false;
-        }
-
-        insertQuery.finish();
-    }
-
-    if (!database.commit()) {
-        setLastError(database.lastError().text());
-        database.rollback();
-        return false;
-    }
-
-    return true;
-}
-
 bool SqliteStore::resetApplicationData() const
 {
     if (!const_cast<SqliteStore *>(this)->ensureReady()) {
@@ -799,7 +719,41 @@ bool SqliteStore::resetApplicationData() const
         QStringLiteral("DELETE FROM resume_state"),
         QStringLiteral("DELETE FROM playback_history"),
         QStringLiteral("DELETE FROM bookmarks"),
-        QStringLiteral("DELETE FROM custom_commands"),
+    };
+
+    for (const QString &statement : statements) {
+        QSqlQuery query(database);
+        if (!query.exec(statement)) {
+            const_cast<SqliteStore *>(this)->setLastError(query.lastError().text());
+            database.rollback();
+            return false;
+        }
+    }
+
+    if (!database.commit()) {
+        const_cast<SqliteStore *>(this)->setLastError(database.lastError().text());
+        database.rollback();
+        return false;
+    }
+
+    return true;
+}
+
+bool SqliteStore::resetSettingsOnly() const
+{
+    if (!const_cast<SqliteStore *>(this)->ensureReady()) {
+        return false;
+    }
+
+    QSqlDatabase database = QSqlDatabase::database(connectionName_, false);
+    if (!database.transaction()) {
+        const_cast<SqliteStore *>(this)->setLastError(database.lastError().text());
+        return false;
+    }
+
+    static const QStringList statements {
+        QStringLiteral("DELETE FROM settings"),
+        QStringLiteral("DELETE FROM window_state"),
     };
 
     for (const QString &statement : statements) {
@@ -912,20 +866,6 @@ bool SqliteStore::migrateDatabase()
     }
 
     if (version < 2) {
-        if (!executeStatement(QStringLiteral(
-                "CREATE TABLE IF NOT EXISTS custom_commands ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                "position INTEGER NOT NULL DEFAULT 0,"
-                "name TEXT NOT NULL,"
-                "script TEXT NOT NULL,"
-                "created_at TEXT NOT NULL,"
-                "updated_at TEXT NOT NULL"
-                ")"))
-            || !executeStatement(QStringLiteral(
-                "CREATE INDEX IF NOT EXISTS idx_custom_commands_position "
-                "ON custom_commands(position, id)"))) {
-            return false;
-        }
         version = 2;
     }
 
@@ -937,6 +877,13 @@ bool SqliteStore::migrateDatabase()
             }
         }
         version = 3;
+    }
+
+    if (version < 4) {
+        if (!executeStatement(QStringLiteral("DROP TABLE IF EXISTS custom_commands"))) {
+            return false;
+        }
+        version = 4;
     }
 
     if (version != kCurrentSchemaVersion && !setSchemaVersion(kCurrentSchemaVersion)) {
@@ -1031,19 +978,7 @@ bool SqliteStore::createTables() const
                ")"))
         && executeStatement(QStringLiteral(
                "CREATE INDEX IF NOT EXISTS idx_bookmarks_source_position "
-               "ON bookmarks(source, position_seconds)"))
-        && executeStatement(QStringLiteral(
-               "CREATE TABLE IF NOT EXISTS custom_commands ("
-               "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-               "position INTEGER NOT NULL DEFAULT 0,"
-               "name TEXT NOT NULL,"
-               "script TEXT NOT NULL,"
-               "created_at TEXT NOT NULL,"
-               "updated_at TEXT NOT NULL"
-               ")"))
-        && executeStatement(QStringLiteral(
-               "CREATE INDEX IF NOT EXISTS idx_custom_commands_position "
-               "ON custom_commands(position, id)"));
+               "ON bookmarks(source, position_seconds)"));
 }
 
 bool SqliteStore::executeStatement(const QString &sql) const

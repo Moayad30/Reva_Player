@@ -12,7 +12,7 @@ Verified against repository files on 2026-04-30.
 | UI | `ui/` | Main window, video viewport, dialogs, control bar, file dialogs, overlays. |
 | Application controllers | `application/` | Playback, playlist, settings, history, bookmarks, screenshots, theme, language. |
 | mpv integration | `infrastructure/mpv/` | libmpv handle, commands, properties, events, OpenGL render host. |
-| Storage | `infrastructure/storage/` | SQLite schema, settings, window state, resume, history, bookmarks, custom commands. |
+| Storage | `infrastructure/storage/` | SQLite schema, settings, window state, resume, history, and bookmarks. |
 | Media services | `services/media/` | Metadata and thumbnail/preview support. |
 | Desktop integration | `platform/`, `dist/linux/` | Linux desktop entry, AppStream metadata, icons, platform helpers. |
 
@@ -62,7 +62,6 @@ Tables verified in `SqliteStore.cpp`:
 | `resume_state` | Per-source resume position and duration. |
 | `playback_history` | Recent playback records. |
 | `bookmarks` | Per-source bookmarks with title, category, note, position, and timestamps. |
-| `custom_commands` | User-defined mpv command scripts. |
 
 Database path:
 

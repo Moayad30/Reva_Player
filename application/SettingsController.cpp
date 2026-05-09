@@ -6,6 +6,8 @@
 #include "application/UiLanguage.hpp"
 #include "infrastructure/storage/SqliteStore.hpp"
 
+#include <QHash>
+
 #include <algorithm>
 #include <cmath>
 
@@ -93,7 +95,6 @@ constexpr auto kSubtitlePreferExternalSetting = "subtitle/prefer_external";
 constexpr auto kSubtitleAutoLoadLocalMatchesSetting = "subtitle/auto_load_local_matches";
 constexpr auto kSubtitlePreferredLanguagesSetting = "subtitle/preferred_languages";
 constexpr auto kSubtitleSyncSmallStepSetting = "subtitle/sync_small_step";
-constexpr auto kSubtitleSyncLargeStepSetting = "subtitle/sync_large_step";
 constexpr auto kSubtitleDownloadCommandSetting = "subtitle/download_command";
 constexpr auto kSceneBrowserStepSetting = "ui/scene_browser_step_seconds";
 constexpr auto kSceneBrowserMaxItemsSetting = "ui/scene_browser_max_items";
@@ -383,10 +384,9 @@ bool seedDefaultSettings(revaplayer::infrastructure::storage::SqliteStore *store
         && store->setDefaultBoolValue(QString::fromLatin1(kSubtitleAutoLoadLocalMatchesSetting), true)
         && store->setDefaultStringValue(QString::fromLatin1(kSubtitlePreferredLanguagesSetting), QStringLiteral("ar,en"))
         && store->setDefaultStringValue(QString::fromLatin1(kSubtitleSyncSmallStepSetting), QStringLiteral("0.25"))
-        && store->setDefaultStringValue(QString::fromLatin1(kSubtitleSyncLargeStepSetting), QStringLiteral("1.00"))
         && store->setDefaultStringValue(
             QString::fromLatin1(revaplayer::application::kSubtitleAutoLoadModeSetting),
-            QStringLiteral("same_name"))
+            QStringLiteral("same_name_only"))
         && store->setDefaultStringValue(
             QString::fromLatin1(revaplayer::application::kSubtitleAutoExtensionsSetting),
             revaplayer::application::defaultSubtitleAutoExtensions())
@@ -523,7 +523,9 @@ bool SettingsController::initialize()
     return store_ != nullptr
         && store_->initialize()
         && seedDefaultSettings(store_.get())
-        && applyDefaultSettingMigrations(store_.get());
+        && applyDefaultSettingMigrations(store_.get())
+        && store_->setBoolValue(QString::fromLatin1(kUseExternalMpvConfigSetting), false)
+        && store_->setBoolValue(QString::fromLatin1(kAlwaysOnTopEnabledSetting), false);
 }
 
 bool SettingsController::isReady() const
@@ -650,13 +652,13 @@ void SettingsController::setShowStatusBarInWindowedMode(const bool visible)
 
 bool SettingsController::alwaysOnTopEnabled() const
 {
-    return store_ != nullptr && store_->boolValue(QString::fromLatin1(kAlwaysOnTopEnabledSetting), false);
+    return false;
 }
 
 void SettingsController::setAlwaysOnTopEnabled(const bool enabled)
 {
     if (store_ != nullptr) {
-        store_->setBoolValue(QString::fromLatin1(kAlwaysOnTopEnabledSetting), enabled);
+        store_->setBoolValue(QString::fromLatin1(kAlwaysOnTopEnabledSetting), enabled && false);
     }
 }
 
@@ -765,13 +767,13 @@ void SettingsController::setPlaybackProfile(const revaplayer::domain::PlayerProf
 
 bool SettingsController::useExternalMpvConfig() const
 {
-    return store_ != nullptr && store_->boolValue(QString::fromLatin1(kUseExternalMpvConfigSetting), false);
+    return false;
 }
 
 void SettingsController::setUseExternalMpvConfig(const bool enabled)
 {
     if (store_ != nullptr) {
-        store_->setBoolValue(QString::fromLatin1(kUseExternalMpvConfigSetting), enabled);
+        store_->setBoolValue(QString::fromLatin1(kUseExternalMpvConfigSetting), enabled && false);
     }
 }
 
@@ -871,7 +873,7 @@ int SettingsController::thumbnailPreviewWidth() const
     }
 
     const QString rawWidth = store_->stringValue(QString::fromLatin1(kThumbnailPreviewWidthSetting), QStringLiteral("0"));
-    return std::clamp(rawWidth.toInt(), 0, 640);
+    return std::clamp(rawWidth.toInt(), 0, 1600);
 }
 
 void SettingsController::setThumbnailPreviewWidth(const int width)
@@ -879,7 +881,7 @@ void SettingsController::setThumbnailPreviewWidth(const int width)
     if (store_ != nullptr) {
         store_->setStringValue(
             QString::fromLatin1(kThumbnailPreviewWidthSetting),
-            QString::number(std::clamp(width, 0, 640)));
+            QString::number(std::clamp(width, 0, 1600)));
     }
 }
 
@@ -890,7 +892,7 @@ int SettingsController::thumbnailPopupWidth() const
     }
 
     const QString rawWidth = store_->stringValue(QString::fromLatin1(kThumbnailPopupWidthSetting), QStringLiteral("0"));
-    return std::clamp(rawWidth.toInt(), 0, 480);
+    return std::clamp(rawWidth.toInt(), 0, 1400);
 }
 
 void SettingsController::setThumbnailPopupWidth(const int width)
@@ -898,7 +900,7 @@ void SettingsController::setThumbnailPopupWidth(const int width)
     if (store_ != nullptr) {
         store_->setStringValue(
             QString::fromLatin1(kThumbnailPopupWidthSetting),
-            QString::number(std::clamp(width, 0, 480)));
+            QString::number(std::clamp(width, 0, 1400)));
     }
 }
 
@@ -1749,26 +1751,6 @@ void SettingsController::setSubtitleSyncSmallStep(const double seconds)
     }
 }
 
-double SettingsController::subtitleSyncLargeStep() const
-{
-    if (store_ == nullptr) {
-        return 1.0;
-    }
-
-    bool ok = false;
-    const double parsed = store_->stringValue(QString::fromLatin1(kSubtitleSyncLargeStepSetting), QStringLiteral("1.00")).toDouble(&ok);
-    return clampSubtitleSyncStep(ok ? parsed : 1.0, 1.0);
-}
-
-void SettingsController::setSubtitleSyncLargeStep(const double seconds)
-{
-    if (store_ != nullptr) {
-        store_->setStringValue(
-            QString::fromLatin1(kSubtitleSyncLargeStepSetting),
-            QString::number(clampSubtitleSyncStep(seconds, 1.0), 'f', 2));
-    }
-}
-
 QString SettingsController::subtitleDownloadCommand() const
 {
     return store_ != nullptr ? store_->stringValue(QString::fromLatin1(kSubtitleDownloadCommandSetting)).trimmed() : QString {};
@@ -1853,16 +1835,6 @@ void SettingsController::setShortcutOverride(const QString &shortcutId, const QS
     store_->setStringValue(shortcutSettingKey(shortcutId), portableShortcut.trimmed());
 }
 
-QVector<revaplayer::domain::CustomCommand> SettingsController::customCommands() const
-{
-    return store_ != nullptr ? store_->loadCustomCommands() : QVector<revaplayer::domain::CustomCommand> {};
-}
-
-bool SettingsController::setCustomCommands(const QVector<revaplayer::domain::CustomCommand> &commands)
-{
-    return store_ != nullptr && store_->replaceCustomCommands(commands);
-}
-
 QString SettingsController::customValue(const QString &key, const QString &defaultValue) const
 {
     return store_ != nullptr && !key.trimmed().isEmpty()
@@ -1944,6 +1916,44 @@ bool SettingsController::resetApplicationData()
         && store_->resetApplicationData()
         && seedDefaultSettings(store_.get())
         && applyDefaultSettingMigrations(store_.get());
+}
+
+bool SettingsController::resetSettingsToDefaults()
+{
+    if (store_ == nullptr) {
+        return false;
+    }
+
+    static const QStringList kPreservedPrefixes {
+        QStringLiteral("pinned_course/"),
+        QStringLiteral("playlist_snapshot/"),
+        QStringLiteral("smart_playlist_rule/"),
+        QStringLiteral("playlist_view_preset/"),
+    };
+
+    QHash<QString, QString> preservedSettings;
+    for (const QString &prefix : kPreservedPrefixes) {
+        const QStringList keys = store_->keysWithPrefix(prefix);
+        for (const QString &key : keys) {
+            preservedSettings.insert(key, store_->stringValue(key));
+        }
+    }
+
+    if (!store_->resetSettingsOnly()
+        || !seedDefaultSettings(store_.get())
+        || !applyDefaultSettingMigrations(store_.get())
+        || !store_->setBoolValue(QString::fromLatin1(kUseExternalMpvConfigSetting), false)
+        || !store_->setBoolValue(QString::fromLatin1(kAlwaysOnTopEnabledSetting), false)) {
+        return false;
+    }
+
+    for (auto it = preservedSettings.cbegin(); it != preservedSettings.cend(); ++it) {
+        if (!store_->setStringValue(it.key(), it.value())) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 QString SettingsController::databasePath() const

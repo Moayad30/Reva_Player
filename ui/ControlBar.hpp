@@ -54,6 +54,7 @@ public:
     void setPanelButtonsEnabled(bool enabled);
     void setPanelButtonsVisible(bool visible);
     void setTrackMenusEnabled(bool qualityEnabled, bool subtitleEnabled);
+    void refreshPresentation();
     [[nodiscard]] QMenu *qualityMenu() const;
     [[nodiscard]] QMenu *subtitleMenu() const;
     QSize minimumSizeHint() const override;

@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QFile>
 #include <QHash>
+#include <QPalette>
 #include <QStyleFactory>
 #include <QStringList>
 
@@ -72,6 +73,47 @@ bool paletteLooksLight(const ThemePalette &palette)
 {
     const QColor surfaceColor(colorFromCssString(QString::fromLatin1(palette.surfaceBg)));
     return surfaceColor.isValid() && surfaceColor.lightness() >= 190;
+}
+
+qreal linearColorChannel(const int channel)
+{
+    const qreal value = std::clamp(channel, 0, 255) / 255.0;
+    return value <= 0.03928
+        ? value / 12.92
+        : std::pow((value + 0.055) / 1.055, 2.4);
+}
+
+qreal relativeLuminance(const QColor &color)
+{
+    if (!color.isValid()) {
+        return 0.0;
+    }
+
+    return (0.2126 * linearColorChannel(color.red()))
+        + (0.7152 * linearColorChannel(color.green()))
+        + (0.0722 * linearColorChannel(color.blue()));
+}
+
+qreal contrastRatio(const QColor &first, const QColor &second)
+{
+    const qreal firstLuminance = relativeLuminance(first);
+    const qreal secondLuminance = relativeLuminance(second);
+    const qreal lighter = std::max(firstLuminance, secondLuminance);
+    const qreal darker = std::min(firstLuminance, secondLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+QColor readableTextColorFor(const QColor &background)
+{
+    const QColor lightText(QStringLiteral("#f8fafc"));
+    const QColor darkText(QStringLiteral("#182232"));
+    if (!background.isValid()) {
+        return lightText;
+    }
+
+    return contrastRatio(background, lightText) >= contrastRatio(background, darkText)
+        ? lightText
+        : darkText;
 }
 
 QColor colorFromCssString(const QString &colorString)
@@ -438,6 +480,9 @@ const QVector<AccentOption> kAccentOptions {
     {QStringLiteral("emerald"), QStringLiteral("Emerald")},
     {QStringLiteral("amber"), QStringLiteral("Amber")},
     {QStringLiteral("rose"), QStringLiteral("Rose")},
+    {QStringLiteral("red"), QStringLiteral("Red")},
+    {QStringLiteral("purple"), QStringLiteral("Purple")},
+    {QStringLiteral("orange"), QStringLiteral("Orange")},
     {QStringLiteral("graphite"), QStringLiteral("Graphite")},
 };
 
@@ -491,6 +536,39 @@ constexpr AccentPalette kRoseAccent {
     "#ef6f92",
 };
 
+constexpr AccentPalette kRedAccent {
+    "#ef4444",
+    "#f87171",
+    "#dc2626",
+    "rgba(239, 68, 68, 0.16)",
+    "#4a2525",
+    "#8c3e3e",
+    "rgba(239, 85, 85, 0.40)",
+    "#ef4444",
+};
+
+constexpr AccentPalette kPurpleAccent {
+    "#a78bfa",
+    "#b9a6ff",
+    "#8b5cf6",
+    "rgba(167, 139, 250, 0.17)",
+    "#352d52",
+    "#67579d",
+    "rgba(167, 139, 250, 0.42)",
+    "#a78bfa",
+};
+
+constexpr AccentPalette kOrangeAccent {
+    "#ff7a1a",
+    "#ff9647",
+    "#e85f00",
+    "rgba(255, 122, 26, 0.17)",
+    "#4d2e18",
+    "#95542a",
+    "rgba(255, 137, 47, 0.42)",
+    "#ff7a1a",
+};
+
 constexpr AccentPalette kGraphiteAccent {
     "#9aa7bc",
     "#aeb8c8",
@@ -542,6 +620,15 @@ const AccentPalette &accentPaletteFor(const QString &accentId)
     if (accentId == QStringLiteral("rose")) {
         return kRoseAccent;
     }
+    if (accentId == QStringLiteral("red")) {
+        return kRedAccent;
+    }
+    if (accentId == QStringLiteral("purple")) {
+        return kPurpleAccent;
+    }
+    if (accentId == QStringLiteral("orange")) {
+        return kOrangeAccent;
+    }
     if (accentId == QStringLiteral("graphite")) {
         return kGraphiteAccent;
     }
@@ -554,6 +641,12 @@ QHash<QString, QString> paletteTokens(const ThemePalette &palette, const AccentP
     const QColor accentColor(QString::fromLatin1(accentPalette.accent));
     const QColor selectColor(QString::fromLatin1(accentPalette.selectBg));
     const QColor textPrimary(QString::fromLatin1(palette.textPrimary));
+    const QColor osdBackground = colorFromCssString(QString::fromLatin1(palette.osdBg));
+    const QColor osdReadableText = readableTextColorFor(osdBackground);
+    QColor osdMutedText = osdReadableText;
+    osdMutedText.setAlphaF(0.78);
+    QColor osdTrackBackground = osdBackground.isValid() ? osdBackground : QColor(QStringLiteral("#0a0c12"));
+    osdTrackBackground.setAlphaF(std::clamp(osdTrackBackground.alphaF() * 0.54, 0.30, 0.68));
     const QColor textSelectionBackground = lightPalette
         ? blendColors(accentColor.isValid() ? accentColor : QColor(QStringLiteral("#7aa2ff")),
                       QColor(QStringLiteral("#ffffff")),
@@ -591,11 +684,68 @@ QHash<QString, QString> paletteTokens(const ThemePalette &palette, const AccentP
         {QStringLiteral("OVERLAY_BORDER"), QString::fromLatin1(palette.overlayBorder)},
         {QStringLiteral("OSD_BG"), QString::fromLatin1(palette.osdBg)},
         {QStringLiteral("OSD_BORDER"), QString::fromLatin1(palette.osdBorder)},
+        {QStringLiteral("OSD_TEXT"), osdReadableText.name(QColor::HexArgb)},
+        {QStringLiteral("OSD_MUTED"), osdMutedText.name(QColor::HexArgb)},
+        {QStringLiteral("OSD_TRACK_BG"), osdTrackBackground.name(QColor::HexArgb)},
         {QStringLiteral("SLIDER_GROOVE"), QString::fromLatin1(palette.sliderGroove)},
         {QStringLiteral("SLIDER_PROGRESS"), QString::fromLatin1(accentPalette.sliderProgress)},
         {QStringLiteral("SLIDER_HANDLE"), QString::fromLatin1(palette.sliderHandle)},
         {QStringLiteral("SEARCH_BG"), QString::fromLatin1(palette.searchBg)},
     };
+}
+
+QColor tokenColor(const QHash<QString, QString> &tokens, const QString &tokenName, const QColor &fallback)
+{
+    const QColor color = colorFromCssString(tokens.value(tokenName));
+    return color.isValid() ? color : fallback;
+}
+
+void applyPaletteTokens(QApplication &application, const QHash<QString, QString> &tokens)
+{
+    QPalette palette = application.palette();
+
+    const QColor appBg = tokenColor(tokens, QStringLiteral("APP_BG"), palette.color(QPalette::Window));
+    const QColor appBgAlt = tokenColor(tokens, QStringLiteral("APP_BG_ALT"), appBg);
+    const QColor surfaceBg = tokenColor(tokens, QStringLiteral("SURFACE_BG"), palette.color(QPalette::Base));
+    const QColor surfaceBgAlt = tokenColor(tokens, QStringLiteral("SURFACE_BG_ALT"), surfaceBg);
+    const QColor searchBg = tokenColor(tokens, QStringLiteral("SEARCH_BG"), surfaceBg);
+    const QColor textPrimary = tokenColor(tokens, QStringLiteral("TEXT_PRIMARY"), palette.color(QPalette::Text));
+    const QColor textMuted = tokenColor(tokens, QStringLiteral("TEXT_MUTED"), textPrimary);
+    const QColor textSubtle = tokenColor(tokens, QStringLiteral("TEXT_SUBTLE"), textMuted);
+    const QColor buttonBg = tokenColor(tokens, QStringLiteral("BUTTON_BG"), surfaceBgAlt);
+    const QColor accent = tokenColor(tokens, QStringLiteral("ACCENT"), palette.color(QPalette::Highlight));
+    const QColor accentSoft = tokenColor(tokens, QStringLiteral("ACCENT_SOFT"), accent);
+    const QColor selectText = tokenColor(tokens, QStringLiteral("TEXT_SELECT_FG"), textPrimary);
+
+    for (const QPalette::ColorGroup group : {QPalette::Active, QPalette::Inactive}) {
+        palette.setColor(group, QPalette::Window, appBg);
+        palette.setColor(group, QPalette::WindowText, textPrimary);
+        palette.setColor(group, QPalette::Base, searchBg);
+        palette.setColor(group, QPalette::AlternateBase, surfaceBgAlt);
+        palette.setColor(group, QPalette::Text, textPrimary);
+        palette.setColor(group, QPalette::Button, buttonBg);
+        palette.setColor(group, QPalette::ButtonText, textPrimary);
+        palette.setColor(group, QPalette::Highlight, accent);
+        palette.setColor(group, QPalette::HighlightedText, selectText);
+        palette.setColor(group, QPalette::ToolTipBase, surfaceBg);
+        palette.setColor(group, QPalette::ToolTipText, textPrimary);
+        palette.setColor(group, QPalette::Link, accent);
+    }
+
+    palette.setColor(QPalette::Disabled, QPalette::Window, appBgAlt);
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, textSubtle);
+    palette.setColor(QPalette::Disabled, QPalette::Base, surfaceBgAlt);
+    palette.setColor(QPalette::Disabled, QPalette::AlternateBase, surfaceBgAlt);
+    palette.setColor(QPalette::Disabled, QPalette::Text, textSubtle);
+    palette.setColor(QPalette::Disabled, QPalette::Button, surfaceBgAlt);
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, textSubtle);
+    palette.setColor(QPalette::Disabled, QPalette::Highlight, accentSoft);
+    palette.setColor(QPalette::Disabled, QPalette::HighlightedText, textMuted);
+    palette.setColor(QPalette::Disabled, QPalette::ToolTipBase, surfaceBg);
+    palette.setColor(QPalette::Disabled, QPalette::ToolTipText, textMuted);
+    palette.setColor(QPalette::Disabled, QPalette::Link, textMuted);
+
+    application.setPalette(palette);
 }
 
 QString supplementalDensityStyleSheet(const QString &densityId)
@@ -818,6 +968,7 @@ bool applyApplicationTheme(QApplication &application,
     const auto tokens = paletteTokens(
         paletteFor(normalizeThemeId(themeId)),
         accentPaletteFor(normalizeAccentId(accentId)));
+    applyPaletteTokens(application, tokens);
     for (auto it = tokens.constBegin(); it != tokens.constEnd(); ++it) {
         styleSheet.replace(QStringLiteral("{{%1}}").arg(it.key()), it.value());
     }

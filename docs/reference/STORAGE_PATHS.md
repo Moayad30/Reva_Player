@@ -31,7 +31,6 @@ Legacy compatibility: the application still contains an older database-path envi
 | `resume_state` | Per-source resume position. |
 | `playback_history` | Recent media records and last positions. |
 | `bookmarks` | Per-source bookmarks with category and note. |
-| `custom_commands` | Custom mpv command scripts. |
 
 ## Cache
 

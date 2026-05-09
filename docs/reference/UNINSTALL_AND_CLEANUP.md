@@ -11,7 +11,7 @@ Package uninstall should remove application files and launchers. It should not r
 
 ## Local Data Cleanup
 
-To remove settings, history, resume state, bookmarks, custom commands, window state, and cache paths targeted by the repository cleanup script:
+To remove settings, history, resume state, bookmarks, window state, and cache paths targeted by the repository cleanup script:
 
 ```bash
 scripts/purge-local-data.sh

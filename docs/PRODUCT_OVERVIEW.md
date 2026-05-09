@@ -32,7 +32,7 @@ This is not a generic media library manager, streaming service client, or cloud-
 
 Reva Player is closer to a power-user local playback workspace than a minimal video player. The repository shows emphasis on:
 
-- Persistent local state for resume, history, bookmarks, settings, shortcuts, and custom commands.
+- Persistent local state for resume, history, bookmarks, settings, and shortcuts.
 - Dense UI panels for playlist, details, bookmarks, scene browsing, saved folders, and settings.
 - Playlist and series progress context, including completed item counts and watched/total known duration.
 - libmpv as the media backend instead of a custom decoder.

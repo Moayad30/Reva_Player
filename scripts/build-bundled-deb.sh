@@ -616,7 +616,9 @@ cp -f "${PROJECT_ROOT}/README.md" "${package_root}/usr/share/doc/revaplayer/READ
 cp -f "${PROJECT_ROOT}/LICENSE" "${package_root}/usr/share/doc/revaplayer/LICENSE"
 cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"
 
-strip_elf_files "${bundle_root}"
+if [ "${REVAPLAYER_BUNDLE_STRIP:-0}" = "1" ]; then
+    strip_elf_files "${bundle_root}"
+fi
 verify_no_unresolved_elf_dependencies "${bundle_root}"
 
 write_postinst_file "${debian_root}/postinst"

@@ -152,11 +152,16 @@ void ThumbnailService::setCurrentSource(const QString &source)
 
     cancel();
     currentSource_ = normalizedSource;
-    thumbfastAvailable_ = false;
-    thumbfastDisabled_ = true;
-    thumbfastInfoReceived_ = false;
-    thumbfastThumbnailBasePath_.clear();
-    thumbfastFrameSize_ = {};
+    // Keep thumbfast runtime state when switching between non-empty media
+    // sources so the first hover preview can work immediately after opening.
+    // Fully reset only when clearing the active source (idle/no media).
+    if (currentSource_.isEmpty()) {
+        thumbfastAvailable_ = false;
+        thumbfastDisabled_ = true;
+        thumbfastInfoReceived_ = false;
+        thumbfastThumbnailBasePath_.clear();
+        thumbfastFrameSize_ = {};
+    }
     thumbfastOutputTimestamp_ = {};
     thumbfastOutputSize_ = -1;
 }

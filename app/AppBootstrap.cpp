@@ -24,19 +24,9 @@
 namespace revaplayer::app {
 namespace {
 
-QString legacyDatabaseEnvVarName()
-{
-    return QStringLiteral("NEW") + QStringLiteral("POT") + QStringLiteral("PLAYER_DB_PATH");
-}
-
 QString configuredDatabasePath()
 {
-    const QString preferredPath = qEnvironmentVariable("REVAPLAYER_DB_PATH").trimmed();
-    if (!preferredPath.isEmpty()) {
-        return preferredPath;
-    }
-
-    return qEnvironmentVariable(legacyDatabaseEnvVarName().toUtf8().constData()).trimmed();
+    return qEnvironmentVariable("REVAPLAYER_DB_PATH").trimmed();
 }
 
 }  // namespace
@@ -98,7 +88,7 @@ int AppBootstrap::run(QApplication &application, const QStringList &arguments)
     revaplayer::application::setCurrentUiLanguage(interfaceLanguage);
     loadQtTranslations(application, interfaceLanguage);
     application.setLayoutDirection(revaplayer::application::currentUiLanguageDirection());
-    QLocale::setDefault(QLocale(interfaceLanguage));
+    QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
     applyTheme(
         application,
         settingsController_ != nullptr ? settingsController_->uiTheme() : QStringLiteral("gray"));

@@ -12,7 +12,7 @@ Needs verification: whether the UI exposes a cache-only action and exactly which
 
 ## Factory Reset
 
-Factory reset means removing local settings/history/resume/bookmarks/custom commands/window state so the next launch recreates default settings.
+Factory reset means removing local settings/history/resume/bookmarks/window state so the next launch recreates default settings.
 
 Repository script:
 

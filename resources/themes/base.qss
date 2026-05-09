@@ -107,8 +107,9 @@ QStatusBar::item {
 }
 
 QStatusBar {
+    background: {{SURFACE_BG_ALT}};
     border-top: 1px solid {{BORDER_SOFT}};
-    color: {{TEXT_MUTED}};
+    color: {{TEXT_PRIMARY}};
     padding-left: 8px;
 }
 
@@ -440,24 +441,24 @@ QLabel#controlTimeLabel {
 }
 
 QLabel#controlVolumeIcon {
-    color: #ffb24a;
+    color: #ff9d18;
     padding-left: 2px;
 }
 
 QLabel#controlVolumeIcon[boosted="true"] {
-    color: #ff6800;
+    color: #ff5a00;
 }
 
 QLabel#controlVolumeValueLabel {
     background: transparent;
-    color: #ffbc66;
+    color: #ff9d18;
     font-size: 12px;
     font-weight: 800;
     padding: 0 4px;
 }
 
 QLabel#controlVolumeValueLabel[boosted="true"] {
-    color: #ff4d00;
+    color: #ff5a00;
 }
 
 QLabel#fullscreenTopBarTitle {
@@ -487,25 +488,25 @@ QSlider::handle:horizontal {
 }
 
 QSlider#controlVolumeSlider::groove:horizontal {
-    background: rgba(90, 62, 28, 0.22);
-    border: 1px solid rgba(164, 106, 28, 0.22);
+    background: {{SLIDER_GROOVE}};
+    border: 1px solid {{BORDER_ACCENT}};
     border-radius: 5px;
     height: 10px;
 }
 
 QSlider#controlVolumeSlider::sub-page:horizontal {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ffd78c, stop:1 #ff971f);
+    background: {{SLIDER_PROGRESS}};
     border-radius: 5px;
 }
 
 QSlider#controlVolumeSlider::add-page:horizontal {
-    background: rgba(66, 48, 28, 0.14);
+    background: {{SURFACE_BG_ALT}};
     border-radius: 5px;
 }
 
 QSlider#controlVolumeSlider::handle:horizontal {
-    background: #fff8ec;
-    border: 1px solid rgba(161, 95, 15, 0.34);
+    background: {{SLIDER_HANDLE}};
+    border: 1px solid {{BORDER_ACCENT}};
     border-radius: 8px;
     margin: -4px 0;
     width: 16px;
@@ -577,7 +578,6 @@ QWidget#playlistViewsRow,
 QWidget#playlistSearchRow,
 QWidget#historyHeaderBar,
 QWidget#sceneBrowserHeader,
-QWidget#scriptsHeaderBar,
 QWidget#settingsSearchRow {
     background: {{SURFACE_BG_ALT}};
     border: 1px solid {{BORDER_STRONG}};
@@ -616,7 +616,6 @@ QWidget#playlistViewsRow QToolButton,
 QWidget#playlistSearchRow QToolButton,
 QWidget#historyHeaderBar QToolButton,
 QWidget#sceneBrowserHeader QToolButton,
-QWidget#scriptsHeaderBar QToolButton,
 QWidget#detailsTabsHeader QToolButton {
     background: transparent;
     border: 1px solid {{BORDER_SOFT}};
@@ -631,7 +630,6 @@ QWidget#playlistViewsRow QToolButton:hover,
 QWidget#playlistSearchRow QToolButton:hover,
 QWidget#historyHeaderBar QToolButton:hover,
 QWidget#sceneBrowserHeader QToolButton:hover,
-QWidget#scriptsHeaderBar QToolButton:hover,
 QWidget#detailsTabsHeader QToolButton:hover {
     background: {{SURFACE_BG_ALT}};
     border-color: {{BORDER_ACCENT}};
@@ -643,7 +641,6 @@ QWidget#playlistViewsRow QToolButton:checked,
 QWidget#playlistSearchRow QToolButton:checked,
 QWidget#historyHeaderBar QToolButton:checked,
 QWidget#sceneBrowserHeader QToolButton:checked,
-QWidget#scriptsHeaderBar QToolButton:checked,
 QWidget#detailsTabsHeader QToolButton:checked {
     background: {{ACCENT_SOFT}};
     border-color: {{SELECT_BORDER}};
@@ -1035,7 +1032,7 @@ QLabel#viewportActionOverlayLabel {
     background: {{OSD_BG}};
     border: 1px solid {{OSD_BORDER}};
     border-radius: 999px;
-    color: {{TEXT_PRIMARY}};
+    color: {{OSD_TEXT}};
     font-size: 13px;
     font-weight: 600;
     padding: 8px 16px;
@@ -1053,38 +1050,38 @@ QWidget#viewportVolumeOverlayHeader {
 
 QLabel#viewportVolumeOverlayTextLabel {
     background: transparent;
-    color: rgba(255, 240, 220, 0.92);
+    color: {{OSD_MUTED}};
     font-weight: 700;
     letter-spacing: 0.4px;
 }
 
 QLabel#viewportVolumeOverlayValueLabel {
     background: transparent;
-    color: #ffb760;
+    color: {{ACCENT}};
     font-weight: 800;
     padding: 0;
 }
 
 QWidget#viewportVolumeOverlayMeterShell {
-    background: rgba(6, 8, 12, 0.34);
-    border: 1px solid rgba(255, 192, 112, 0.24);
+    background: rgba(7, 5, 4, 0.46);
+    border: 1px solid rgba(139, 82, 24, 0.72);
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterFill {
-    background: #ff9f2f;
+    background: #ff9d18;
     border: none;
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterBoostFill {
-    background: #ff7a00;
+    background: #ff5a00;
     border: none;
     border-radius: 999px;
 }
 
 QWidget#viewportVolumeOverlayMeterMarker {
-    background: rgba(255, 242, 223, 0.98);
+    background: #ffd58a;
     border: none;
     border-radius: 1px;
 }

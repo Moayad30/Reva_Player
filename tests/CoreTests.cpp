@@ -1,5 +1,4 @@
 #include "application/BookmarkController.hpp"
-#include "application/CustomCommandScript.hpp"
 #include "application/PlaybackDiagnosticsFormatter.hpp"
 #include "application/HistoryController.hpp"
 #include "application/PlaylistController.hpp"
@@ -33,6 +32,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
 #include <QSlider>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -46,6 +46,7 @@
 #include <QtTest/QtTest>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -88,6 +89,49 @@ std::unique_ptr<revaplayer::infrastructure::storage::SqliteStore> makeStore(cons
     return std::make_unique<revaplayer::infrastructure::storage::SqliteStore>(databasePath);
 }
 
+QColor sampledWidgetColor(QWidget *widget, const double xFraction, const double yFraction = 0.5)
+{
+    if (widget == nullptr) {
+        return {};
+    }
+
+    widget->repaint();
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const QImage image = widget->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    if (image.isNull()) {
+        return {};
+    }
+
+    const int x = std::clamp(
+        static_cast<int>(std::lround(xFraction * static_cast<double>(image.width() - 1))),
+        0,
+        std::max(0, image.width() - 1));
+    const int y = std::clamp(
+        static_cast<int>(std::lround(yFraction * static_cast<double>(image.height() - 1))),
+        0,
+        std::max(0, image.height() - 1));
+    return QColor::fromRgba(image.pixel(x, y));
+}
+
+int channelDistance(const QColor &first, const QColor &second)
+{
+    return std::max(
+        std::abs(first.red() - second.red()),
+        std::max(
+            std::abs(first.green() - second.green()),
+            std::abs(first.blue() - second.blue())));
+}
+
+bool isOrangeVolumeColor(const QColor &color)
+{
+    return color.isValid() && color.red() >= 210 && color.green() >= 85 && color.green() <= 190 && color.blue() <= 110;
+}
+
+bool isRedVolumeColor(const QColor &color)
+{
+    return color.isValid() && color.red() >= 190 && color.green() <= 120 && color.blue() <= 80;
+}
+
 }  // namespace
 
 class CoreTests final : public QObject {
@@ -98,7 +142,6 @@ private slots:
     void settingsResetSeedsDefaults();
     void windowStatePersistence();
     void bookmarkCrud();
-    void customCommandsPersistence();
     void historyResumeTransitions();
     void historyRecordOpenPreservesExistingProgress();
     void historyMultipleResumeStatesSurviveNavigation();
@@ -118,10 +161,10 @@ private slots:
     void uiLanguageCriticalCoverage();
     void themeResourceAndPaletteCoverage();
     void firstRunDialogDefaultsAndPersistence();
-    void settingsDialogSubtitlePreviewVisibility();
     void settingsDialogSubtitleAutoLoadSync();
     void controlBarDesktopChromeVisibility();
     void controlBarButtonsEmitSignals();
+    void controlBarPaintUsesAccentTimelineAndFixedVolumeColors();
     void desktopIntegrationPlatformName();
     void thumbnailServiceUnavailableWithoutBridge();
     void thumbnailServicePendingWorkerTimesOut();
@@ -136,14 +179,14 @@ void CoreTests::settingsPersistence()
     const QString databasePath = temporaryDir.filePath(QStringLiteral("settings.sqlite"));
 
     QCOMPARE(revaplayer::application::availableThemes().size(), 9);
-    QCOMPARE(revaplayer::application::availableAccents().size(), 5);
+    QCOMPARE(revaplayer::application::availableAccents().size(), 8);
     QCOMPARE(revaplayer::application::availableDensities().size(), 3);
-    QCOMPARE(revaplayer::application::availableUiLanguages().size(), 8);
+    QCOMPARE(revaplayer::application::availableUiLanguages().size(), 2);
     QCOMPARE(revaplayer::application::normalizeThemeId(QStringLiteral("night")), QStringLiteral("day"));
     QCOMPARE(revaplayer::application::normalizeThemeId(QStringLiteral("unknown-theme")), QStringLiteral("gray"));
-    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("zh_CN")), QStringLiteral("zh_CN"));
-    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("ru")), QStringLiteral("ru"));
-    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("unknown-language")), QStringLiteral("ar"));
+    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("zh_CN")), QStringLiteral("en"));
+    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("ru")), QStringLiteral("en"));
+    QCOMPARE(revaplayer::application::normalizeUiLanguageId(QStringLiteral("unknown-language")), QStringLiteral("en"));
 
     {
         revaplayer::application::SettingsController controller(makeStore(databasePath));
@@ -223,7 +266,6 @@ void CoreTests::settingsPersistence()
         controller.setSubtitleAutoLoadLocalMatches(false);
         controller.setSubtitlePreferredLanguages(QStringLiteral("ar, en, ja"));
         controller.setSubtitleSyncSmallStep(0.40);
-        controller.setSubtitleSyncLargeStep(1.75);
         controller.setSubtitleDownloadCommand(QStringLiteral("subliminal download -l {languages} \"{file}\""));
         controller.setSceneBrowserStepSeconds(2);
         controller.setSceneBrowserMaxItems(36);
@@ -258,7 +300,7 @@ void CoreTests::settingsPersistence()
         QCOMPARE(controller.historyEnabled(), false);
         QCOMPARE(controller.clearHistoryOnExit(), true);
         QCOMPARE(controller.playbackProfile(), revaplayer::domain::PlayerProfile::Quality);
-        QCOMPARE(controller.useExternalMpvConfig(), true);
+        QCOMPARE(controller.useExternalMpvConfig(), false);
         QCOMPARE(controller.startupVolume(), 142);
         QCOMPARE(controller.rememberLastVolume(), false);
         QCOMPARE(controller.startupPlaybackSpeed(), 1.35);
@@ -321,7 +363,6 @@ void CoreTests::settingsPersistence()
         QCOMPARE(controller.subtitleAutoLoadLocalMatches(), false);
         QCOMPARE(controller.subtitlePreferredLanguages(), QStringLiteral("ar,en,ja"));
         QCOMPARE(controller.subtitleSyncSmallStep(), 0.40);
-        QCOMPARE(controller.subtitleSyncLargeStep(), 1.75);
         QCOMPARE(controller.subtitleDownloadCommand(), QStringLiteral("subliminal download -l {languages} \"{file}\""));
         QCOMPARE(controller.sceneBrowserStepSeconds(), 2);
         QCOMPARE(controller.sceneBrowserMaxItems(), 36);
@@ -482,43 +523,6 @@ void CoreTests::bookmarkCrud()
 
     QVERIFY(controller.deleteBookmark(bookmarks.first().id));
     QCOMPARE(controller.bookmarksFor(mediaUrl.toString()).size(), 0);
-}
-
-void CoreTests::customCommandsPersistence()
-{
-    QTemporaryDir temporaryDir;
-    QVERIFY(temporaryDir.isValid());
-    const QString databasePath = temporaryDir.filePath(QStringLiteral("commands.sqlite"));
-
-    {
-        revaplayer::application::SettingsController controller(makeStore(databasePath));
-        QVERIFY2(controller.initialize(), qPrintable(controller.lastError()));
-
-        QVector<revaplayer::domain::CustomCommand> commands;
-        commands.push_back(revaplayer::domain::CustomCommand {
-            .id = -1,
-            .name = QStringLiteral("Cinema"),
-            .script = QStringLiteral("set|speed|1.15\nshow-text|Cinema Mode"),
-        });
-        commands.push_back(revaplayer::domain::CustomCommand {
-            .id = -1,
-            .name = QStringLiteral("Subtitle Up"),
-            .script = QStringLiteral("add|sub-pos|-5"),
-        });
-
-        QVERIFY(controller.setCustomCommands(commands));
-    }
-
-    {
-        revaplayer::application::SettingsController controller(makeStore(databasePath));
-        QVERIFY2(controller.initialize(), qPrintable(controller.lastError()));
-        const QVector<revaplayer::domain::CustomCommand> commands = controller.customCommands();
-        QCOMPARE(commands.size(), 2);
-        QCOMPARE(commands.at(0).name, QStringLiteral("Cinema"));
-        QCOMPARE(commands.at(0).script, QStringLiteral("set|speed|1.15\nshow-text|Cinema Mode"));
-        QCOMPARE(commands.at(1).name, QStringLiteral("Subtitle Up"));
-        QCOMPARE(commands.at(1).script, QStringLiteral("add|sub-pos|-5"));
-    }
 }
 
 void CoreTests::historyResumeTransitions()
@@ -1019,16 +1023,6 @@ void CoreTests::subtitleStyleOptions()
     const QString previousLanguage = revaplayer::application::currentUiLanguage();
     revaplayer::application::setCurrentUiLanguage(QStringLiteral("en"));
 
-    QString parseError;
-    const QVector<QStringList> parsedCommands = revaplayer::application::parseCustomCommandScript(
-        QStringLiteral("# comment\nset|speed|1.25\nshow-text|Cinema Mode"),
-        &parseError);
-    QVERIFY(parseError.isEmpty());
-    QCOMPARE(parsedCommands.size(), 2);
-    QCOMPARE(parsedCommands.at(0), QStringList({QStringLiteral("set"), QStringLiteral("speed"), QStringLiteral("1.25")}));
-    QCOMPARE(parsedCommands.at(1), QStringList({QStringLiteral("show-text"), QStringLiteral("Cinema Mode")}));
-    QVERIFY(revaplayer::application::parseCustomCommandScript(QStringLiteral(" |speed|1.0"), &parseError).isEmpty());
-    QVERIFY(!parseError.isEmpty());
     QCOMPARE(revaplayer::application::normalizeSubtitleAssOverride(QStringLiteral(" FORCE ")), QStringLiteral("force"));
     QCOMPARE(revaplayer::application::normalizeSubtitleAssOverride(QStringLiteral("unknown")), QStringLiteral("scale"));
     QCOMPARE(revaplayer::application::subtitleAssOverrideLabel(QStringLiteral("strip")), QStringLiteral("Strip Embedded Styling"));
@@ -1039,8 +1033,8 @@ void CoreTests::subtitleStyleOptions()
     QCOMPARE(revaplayer::application::clampSubtitlePosition(170), 150);
     QCOMPARE(revaplayer::application::clampSubtitleFontSize(3), 8);
     QCOMPARE(revaplayer::application::clampSubtitleFontSize(500), 144);
-    QCOMPARE(revaplayer::application::normalizeSubtitleAutoLoadMode(QStringLiteral(" FUZZY ")), QStringLiteral("fuzzy"));
-    QCOMPARE(revaplayer::application::subtitleAutoLoadModeMpvValue(QStringLiteral("same_name")), QStringLiteral("exact"));
+    QCOMPARE(revaplayer::application::normalizeSubtitleAutoLoadMode(QStringLiteral(" FUZZY ")), QStringLiteral("same_name_language"));
+    QCOMPARE(revaplayer::application::subtitleAutoLoadModeMpvValue(QStringLiteral("same_name_only")), QStringLiteral("exact"));
     QCOMPARE(revaplayer::application::normalizeSubtitleBorderStyle(QStringLiteral("opaque-box")), QStringLiteral("opaque-box"));
     QCOMPARE(revaplayer::application::normalizeSubtitleAlignY(QStringLiteral("middle")), QStringLiteral("bottom"));
     QCOMPARE(revaplayer::application::normalizeSubtitleColorString(QStringLiteral("bad"), QStringLiteral("#FFFFFFFF")).toLower(), QStringLiteral("#ffffffff"));
@@ -1069,7 +1063,7 @@ void CoreTests::uiLanguageTranslations()
              QStringLiteral("تم تفعيل حفظ حالة النافذة، لذلك ستتم استعادة آخر وضع نافذة مستخدم."));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Create a bookmark at %1")).arg(QStringLiteral("01:15")),
              QStringLiteral("أنشئ إشارة مرجعية عند 01:15"));
-    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Open Folder...")), QStringLiteral("فتح مجلد..."));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Open Folder")), QStringLiteral("فتح مجلد"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Back")), QStringLiteral("رجوع"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Add to Favorites")), QStringLiteral("اضافة للمفضل"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Remove from Favorites")), QStringLiteral("إزالة من المفضلة"));
@@ -1082,11 +1076,11 @@ void CoreTests::uiLanguageTranslations()
              QStringLiteral("إزالة التنسيق المضمن"));
     QCOMPARE(revaplayer::application::currentUiLanguageDirection(), Qt::LeftToRight);
 
-    revaplayer::application::setCurrentUiLanguage(QStringLiteral("zh_CN"));
-    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Preferences")), QStringLiteral("偏好设置"));
-    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Theme Editor")), QStringLiteral("主题编辑器"));
-    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Open Folder...")), QStringLiteral("打开文件夹..."));
-    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Startup volume behavior")), QStringLiteral("启动音量行为"));
+    revaplayer::application::setCurrentUiLanguage(QStringLiteral("en"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Preferences")), QStringLiteral("Preferences"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Theme Editor")), QStringLiteral("Theme Editor"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Open Folder")), QStringLiteral("Open Folder"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Startup volume behavior")), QStringLiteral("Startup volume behavior"));
     QCOMPARE(revaplayer::application::currentUiLanguageDirection(), Qt::LeftToRight);
 
     revaplayer::application::setCurrentUiLanguage(previousLanguage);
@@ -1110,27 +1104,23 @@ void CoreTests::firstRunDialogDefaultsAndPersistence()
     auto *formLayout = dialog.findChild<QFormLayout *>(QStringLiteral("firstRunFormLayout"));
     auto *languageComboBox = dialog.findChild<QComboBox *>(QStringLiteral("firstRunLanguageComboBox"));
     auto *themeComboBox = dialog.findChild<QComboBox *>(QStringLiteral("firstRunThemeComboBox"));
-    auto *dashboardCheckBox = dialog.findChild<QCheckBox *>(QStringLiteral("firstRunDashboardCheckBox"));
     auto *progressCheckBox = dialog.findChild<QCheckBox *>(QStringLiteral("firstRunProgressCheckBox"));
 
     QVERIFY(formLayout != nullptr);
     QVERIFY(languageComboBox != nullptr);
     QVERIFY(themeComboBox != nullptr);
-    QVERIFY(dashboardCheckBox != nullptr);
+    QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("firstRunDashboardCheckBox")) == nullptr);
     QVERIFY(progressCheckBox != nullptr);
     QCOMPARE(formLayout->itemAt(0, QFormLayout::FieldRole)->widget(), static_cast<QWidget *>(languageComboBox));
-    QCOMPARE(controller.interfaceLanguage(), QStringLiteral("ar"));
-    QCOMPARE(languageComboBox->currentData().toString(), QStringLiteral("ar"));
+    QCOMPARE(controller.interfaceLanguage(), QStringLiteral("en"));
+    QCOMPARE(languageComboBox->currentData().toString(), QStringLiteral("en"));
     QCOMPARE(dialog.layoutDirection(), Qt::LeftToRight);
     QCOMPARE(QApplication::layoutDirection(), Qt::LeftToRight);
-    QVERIFY(dashboardCheckBox->isChecked());
     QVERIFY(progressCheckBox->isChecked());
-    QCOMPARE(dashboardCheckBox->layoutDirection(), Qt::RightToLeft);
     QCOMPARE(progressCheckBox->layoutDirection(), Qt::RightToLeft);
 
     languageComboBox->setCurrentIndex(languageComboBox->findData(QStringLiteral("en")));
     themeComboBox->setCurrentIndex(themeComboBox->findData(QStringLiteral("dark")));
-    dashboardCheckBox->setChecked(false);
     progressCheckBox->setChecked(false);
     QCoreApplication::processEvents();
 
@@ -1141,8 +1131,8 @@ void CoreTests::firstRunDialogDefaultsAndPersistence()
     QCOMPARE(controller.interfaceLanguage(), QStringLiteral("en"));
     QCOMPARE(controller.uiTheme(), QStringLiteral("dark"));
     QCOMPARE(controller.customValue(QStringLiteral("ui/mode")), QStringLiteral("simple"));
-    QCOMPARE(controller.customValue(QStringLiteral("ui/dashboard_enabled")), QStringLiteral("0"));
-    QCOMPARE(controller.customValue(QStringLiteral("ui/dashboard_show_on_idle")), QStringLiteral("0"));
+    QCOMPARE(controller.customValue(QStringLiteral("ui/dashboard_enabled")), QStringLiteral("1"));
+    QCOMPARE(controller.customValue(QStringLiteral("ui/dashboard_show_on_idle")), QStringLiteral("1"));
     QCOMPARE(controller.customValue(QStringLiteral("playlist/progress_mode_enabled")), QStringLiteral("0"));
 
     revaplayer::application::setCurrentUiLanguage(previousLanguage);
@@ -1153,12 +1143,6 @@ void CoreTests::uiLanguageCriticalCoverage()
 {
     const QStringList languages {
         QStringLiteral("ar"),
-        QStringLiteral("es"),
-        QStringLiteral("fr"),
-        QStringLiteral("de"),
-        QStringLiteral("tr"),
-        QStringLiteral("ru"),
-        QStringLiteral("zh_CN"),
     };
 
     const QStringList criticalStrings {
@@ -1227,6 +1211,7 @@ void CoreTests::themeResourceAndPaletteCoverage()
     QVERIFY(application != nullptr);
 
     const QString previousStyleSheet = application->styleSheet();
+    const QPalette previousPalette = application->palette();
     const QStringList tokenNames {
         QStringLiteral("APP_BG"),
         QStringLiteral("APP_BG_ELEVATED"),
@@ -1255,6 +1240,9 @@ void CoreTests::themeResourceAndPaletteCoverage()
         QStringLiteral("OVERLAY_BORDER"),
         QStringLiteral("OSD_BG"),
         QStringLiteral("OSD_BORDER"),
+        QStringLiteral("OSD_TEXT"),
+        QStringLiteral("OSD_MUTED"),
+        QStringLiteral("OSD_TRACK_BG"),
         QStringLiteral("SLIDER_GROOVE"),
         QStringLiteral("SLIDER_PROGRESS"),
         QStringLiteral("SLIDER_HANDLE"),
@@ -1283,61 +1271,15 @@ void CoreTests::themeResourceAndPaletteCoverage()
                 QVERIFY2(
                     !application->styleSheet().contains(QStringLiteral("{{")),
                     qPrintable(QStringLiteral("Unresolved stylesheet token for %1/%2/%3").arg(theme.id, accent.id, density.id)));
+                QCOMPARE(
+                    application->palette().color(QPalette::Active, QPalette::Highlight),
+                    revaplayer::application::resolvedThemeColor(theme.id, accent.id, QStringLiteral("ACCENT")));
             }
         }
     }
 
     application->setStyleSheet(previousStyleSheet);
-}
-
-void CoreTests::settingsDialogSubtitlePreviewVisibility()
-{
-    QTemporaryDir temporaryDir;
-    QVERIFY(temporaryDir.isValid());
-    const QString databasePath = temporaryDir.filePath(QStringLiteral("settings.sqlite"));
-
-    revaplayer::application::SettingsController controller(makeStore(databasePath));
-    QVERIFY2(controller.initialize(), qPrintable(controller.lastError()));
-
-    revaplayer::ui::SettingsDialog dialog(&controller);
-    auto *tabs = dialog.findChild<QTabWidget *>(QStringLiteral("settingsTabs"));
-    QVERIFY(tabs != nullptr);
-
-    auto *previewGroup = dialog.findChild<QGroupBox *>(QStringLiteral("subtitlePreviewGroup"));
-    QVERIFY(previewGroup != nullptr);
-
-    const QString playlistTabText = revaplayer::application::translateUiText(QStringLiteral("Playlist"));
-    const QString subtitlesTabText = revaplayer::application::translateUiText(QStringLiteral("Subtitles"));
-
-    int playlistIndex = -1;
-    int subtitlesIndex = -1;
-    for (int index = 0; index < tabs->count(); ++index) {
-        const QString tabText = tabs->tabText(index);
-        if (tabText == playlistTabText) {
-            playlistIndex = index;
-        } else if (tabText == subtitlesTabText) {
-            subtitlesIndex = index;
-        }
-    }
-
-    QVERIFY(playlistIndex >= 0);
-    QVERIFY(subtitlesIndex >= 0);
-
-    QWidget *playlistTabPage = tabs->widget(playlistIndex);
-    QWidget *subtitlesTabPage = tabs->widget(subtitlesIndex);
-    QVERIFY(playlistTabPage != nullptr);
-    QVERIFY(subtitlesTabPage != nullptr);
-
-    QVERIFY(subtitlesTabPage->isAncestorOf(previewGroup));
-    QVERIFY(!playlistTabPage->isAncestorOf(previewGroup));
-
-    tabs->setCurrentIndex(playlistIndex);
-    QCoreApplication::processEvents();
-    QVERIFY(previewGroup->isHidden());
-
-    tabs->setCurrentIndex(subtitlesIndex);
-    QCoreApplication::processEvents();
-    QVERIFY(!previewGroup->isHidden());
+    application->setPalette(previousPalette);
 }
 
 void CoreTests::settingsDialogSubtitleAutoLoadSync()
@@ -1351,29 +1293,24 @@ void CoreTests::settingsDialogSubtitleAutoLoadSync()
     controller.setSubtitleAutoLoadLocalMatches(true);
     controller.setCustomValue(
         QString::fromLatin1(revaplayer::application::kSubtitleAutoLoadModeSetting),
-        QStringLiteral("same_name"));
+        QStringLiteral("same_name_only"));
 
     revaplayer::ui::SettingsDialog dialog(&controller);
     auto *checkBox = dialog.findChild<QCheckBox *>(QStringLiteral("subtitleAutoLoadLocalMatchesCheckBox"));
     auto *comboBox = dialog.findChild<QComboBox *>(QStringLiteral("subtitleAutoLoadModeComboBox"));
-    auto *extensionsEdit = dialog.findChild<QLineEdit *>(QStringLiteral("subtitleAutoExtensionsEdit"));
     QVERIFY(checkBox != nullptr);
     QVERIFY(comboBox != nullptr);
-    QVERIFY(extensionsEdit != nullptr);
 
     QVERIFY(checkBox->isChecked());
-    QVERIFY(extensionsEdit->isEnabled());
 
-    comboBox->setCurrentIndex(comboBox->findData(QStringLiteral("disabled")));
+    comboBox->setCurrentIndex(comboBox->findData(QStringLiteral("manual_only")));
     QCoreApplication::processEvents();
     QVERIFY(!checkBox->isChecked());
-    QVERIFY(!extensionsEdit->isEnabled());
 
     checkBox->setChecked(true);
     QCoreApplication::processEvents();
-    QVERIFY(comboBox->currentData().toString() != QStringLiteral("disabled"));
+    QVERIFY(comboBox->currentData().toString() != QStringLiteral("manual_only"));
     QVERIFY(checkBox->isChecked());
-    QVERIFY(extensionsEdit->isEnabled());
 }
 
 void CoreTests::controlBarDesktopChromeVisibility()
@@ -1459,6 +1396,101 @@ void CoreTests::controlBarButtonsEmitSignals()
     QCOMPARE(detailsSpy.count(), 1);
     QCOMPARE(fullscreenSpy.count(), 1);
     QVERIFY(volumeSpy.count() >= 1);
+}
+
+void CoreTests::controlBarPaintUsesAccentTimelineAndFixedVolumeColors()
+{
+    auto *application = qobject_cast<QApplication *>(QApplication::instance());
+    QVERIFY(application != nullptr);
+
+    const QString previousStyleSheet = application->styleSheet();
+    const QPalette previousPalette = application->palette();
+
+    const QStringList accentIds {
+        QStringLiteral("blue"),
+        QStringLiteral("emerald"),
+        QStringLiteral("rose"),
+        QStringLiteral("red"),
+        QStringLiteral("purple"),
+        QStringLiteral("orange"),
+    };
+
+    for (const QString &accentId : accentIds) {
+        QString errorMessage;
+        QVERIFY2(
+            revaplayer::application::applyApplicationTheme(
+                *application,
+                QStringLiteral("dark"),
+                accentId,
+                QStringLiteral("normal"),
+                revaplayer::application::ThemeCustomization {},
+                &errorMessage),
+            qPrintable(errorMessage));
+
+        revaplayer::ui::ControlBar controlBar;
+        controlBar.setPlaybackAvailable(true);
+        controlBar.resize(1120, 72);
+        controlBar.show();
+        controlBar.setPosition(45.0, 100.0);
+        controlBar.setVolume(80);
+        QCoreApplication::processEvents();
+
+        auto *positionSlider = controlBar.findChild<QSlider *>(QStringLiteral("controlPositionSlider"));
+        auto *volumeSlider = controlBar.findChild<QSlider *>(QStringLiteral("controlVolumeSlider"));
+        QVERIFY(positionSlider != nullptr);
+        QVERIFY(volumeSlider != nullptr);
+
+        const QColor accent = revaplayer::application::resolvedThemeColor(
+            QStringLiteral("dark"),
+            accentId,
+            QStringLiteral("ACCENT"));
+        QVERIFY(accent.isValid());
+
+        const QColor timelineColor = sampledWidgetColor(positionSlider, 0.30);
+        const QColor volumeBaseColor = sampledWidgetColor(volumeSlider, 0.34);
+        const QColor sliderHighlight = positionSlider->palette().color(QPalette::Active, QPalette::Highlight);
+        QVERIFY2(channelDistance(timelineColor, accent) <= 48,
+                 qPrintable(QStringLiteral("timeline color %1 did not match accent %2 for %3; slider highlight %4")
+                                .arg(timelineColor.name(), accent.name(), accentId, sliderHighlight.name())));
+        QVERIFY2(isOrangeVolumeColor(volumeBaseColor),
+                 qPrintable(QStringLiteral("volume base color %1 was not fixed orange for %2")
+                                .arg(volumeBaseColor.name(), accentId)));
+    }
+
+    QString errorMessage;
+    QVERIFY2(
+        revaplayer::application::applyApplicationTheme(
+            *application,
+            QStringLiteral("dark"),
+            QStringLiteral("emerald"),
+            QStringLiteral("normal"),
+            revaplayer::application::ThemeCustomization {},
+            &errorMessage),
+        qPrintable(errorMessage));
+
+    revaplayer::ui::ControlBar boostedControlBar;
+    boostedControlBar.setPlaybackAvailable(true);
+    boostedControlBar.resize(1120, 72);
+    boostedControlBar.show();
+    boostedControlBar.setVolume(125);
+    QCoreApplication::processEvents();
+
+    auto *boostedVolumeSlider = boostedControlBar.findChild<QSlider *>(QStringLiteral("controlVolumeSlider"));
+    QVERIFY(boostedVolumeSlider != nullptr);
+    boostedControlBar.setVolume(100);
+    QCoreApplication::processEvents();
+    const QColor normalLimitColor = sampledWidgetColor(boostedVolumeSlider, 0.60);
+    QVERIFY2(isOrangeVolumeColor(normalLimitColor),
+             qPrintable(QStringLiteral("100 percent color %1 was not clearly orange").arg(normalLimitColor.name())));
+
+    boostedControlBar.setVolume(125);
+    QCoreApplication::processEvents();
+    const QColor boostColor = sampledWidgetColor(boostedVolumeSlider, 0.76);
+    QVERIFY2(isOrangeVolumeColor(boostColor) || isRedVolumeColor(boostColor),
+             qPrintable(QStringLiteral("boost color %1 was not orange/red").arg(boostColor.name())));
+
+    application->setStyleSheet(previousStyleSheet);
+    application->setPalette(previousPalette);
 }
 
 void CoreTests::desktopIntegrationPlatformName()
