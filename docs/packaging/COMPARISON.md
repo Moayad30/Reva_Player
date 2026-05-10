@@ -33,7 +33,7 @@ public packaging path yet.
 - Build matrix for Qt 6 and optional Qt 5.
 - `ctest` on Linux.
 - AppImage build artifact.
-- CPack DEB artifact.
+- Bundled DEB artifact.
 - Package install smoke tests in clean containers/VMs where possible.
 - Bundled RPM build artifact.
 - Later: Flatpak build after a manifest exists.

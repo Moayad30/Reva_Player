@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly PACKAGE_NAME="revaplayer"
+readonly PACKAGE_NAME="reva-player"
 readonly APP_BINARY_NAME="RevaPlayer"
 readonly APP_DISPLAY_NAME="Reva Player"
 
@@ -12,7 +12,7 @@ Usage: scripts/uninstall-deb-system.sh
 Removes the system-installed Reva Player Debian package.
 
 This removes:
-  - the installed revaplayer package
+  - the installed reva-player package
   - files placed by the package under /opt/revaplayer and /usr/share
 
 This does NOT remove:

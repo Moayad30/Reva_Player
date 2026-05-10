@@ -3,7 +3,7 @@
 This page documents the local AppImage install created by:
 
 ```bash
-scripts/install-appimage-local.sh /path/to/Reva-Player-<version>-<arch>.AppImage
+scripts/install-appimage-local.sh /path/to/RevaPlayer-v<version>-<arch>.AppImage
 ```
 
 To remove that local installation:

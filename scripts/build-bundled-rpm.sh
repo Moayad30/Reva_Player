@@ -8,9 +8,11 @@ readonly APP_DISPLAY_NAME="Reva Player"
 readonly APP_ID="io.github.moayad30.revaplayer"
 readonly DESKTOP_ID="${APP_ID}.desktop"
 readonly ICON_NAME="revaplayer"
-readonly PACKAGE_NAME="revaplayer"
+readonly PACKAGE_NAME="reva-player"
 readonly PACKAGE_INSTALL_ROOT="/opt/revaplayer"
 readonly PACKAGE_RELEASE="1"
+
+source "${SCRIPT_DIR}/lib/bundle-runtime.sh"
 
 build_dir="/tmp/reva-player-rpm-build"
 install_root="/tmp/reva-player-install-check"
@@ -167,12 +169,14 @@ copy_optional_qt_runtime_plugins() {
     [ -d "${plugins_dir}" ] || return 0
 
     mkdir -p "${destination_root}/platforms" \
+             "${destination_root}/iconengines" \
              "${destination_root}/wayland-decoration-client" \
              "${destination_root}/wayland-graphics-integration-client" \
              "${destination_root}/wayland-shell-integration"
 
     local file_path=""
     for file_path in \
+        "${plugins_dir}/platforms/libqwayland.so" \
         "${plugins_dir}/platforms/libqwayland-egl.so" \
         "${plugins_dir}/platforms/libqwayland-generic.so" \
         "${plugins_dir}/platforms/libqminimal.so" \
@@ -181,6 +185,10 @@ copy_optional_qt_runtime_plugins() {
             cp -f "${file_path}" "${destination_root}/platforms/"
         fi
     done
+
+    if [ -f "${plugins_dir}/iconengines/libqsvgicon.so" ]; then
+        cp -f "${plugins_dir}/iconengines/libqsvgicon.so" "${destination_root}/iconengines/"
+    fi
 
     local optional_dir=""
     for optional_dir in \
@@ -203,14 +211,10 @@ copy_optional_qt_runtime_libraries() {
         /lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
         /lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /lib/x86_64-linux-gnu/libdbus-1.so.3 \
         /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 \
         /usr/lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /usr/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
-        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /usr/lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /usr/lib/x86_64-linux-gnu/libdbus-1.so.3; do
+        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6; do
         if [ -f "${library_path}" ]; then
             cp -f "${library_path}" "${destination_root}/"
         fi
@@ -223,9 +227,7 @@ copy_optional_qt_runtime_libraries() {
             libQt6DBus.so.6 \
             libQt5DBus.so.5 \
             libQt6WaylandClient.so.6 \
-            libQt6WaylandEglClientHwIntegration.so.6 \
-            libwayland-client.so.0 \
-            libdbus-1.so.3; do
+            libQt6WaylandEglClientHwIntegration.so.6; do
             detected_path="$(ldconfig -p 2>/dev/null | awk -v library_name="${library_name}" '$1 == library_name && detected_path == "" { detected_path = $NF } END { print detected_path }')"
             if [ -f "${detected_path}" ]; then
                 cp -f "${detected_path}" "${destination_root}/"
@@ -457,6 +459,65 @@ License:        GPL-2.0-or-later
 URL:            https://github.com/moayad30/Reva_Player
 AutoReqProv:    no
 Requires:       bash
+Requires:       libc.so.6()(64bit)
+Requires:       libstdc++.so.6()(64bit)
+Requires:       libgcc_s.so.1()(64bit)
+Requires:       libGL.so.1()(64bit)
+Requires:       libGLX.so.0()(64bit)
+Requires:       libEGL.so.1()(64bit)
+Requires:       libOpenGL.so.0()(64bit)
+Requires:       libGLdispatch.so.0()(64bit)
+Requires:       libX11.so.6()(64bit)
+Requires:       libX11-xcb.so.1()(64bit)
+Requires:       libXau.so.6()(64bit)
+Requires:       libXext.so.6()(64bit)
+Requires:       libXfixes.so.3()(64bit)
+Requires:       libXi.so.6()(64bit)
+Requires:       libXrandr.so.2()(64bit)
+Requires:       libXrender.so.1()(64bit)
+Requires:       libXss.so.1()(64bit)
+Requires:       libxcb.so.1()(64bit)
+Requires:       libxcb-cursor.so.0()(64bit)
+Requires:       libxcb-dri3.so.0()(64bit)
+Requires:       libxcb-glx.so.0()(64bit)
+Requires:       libxcb-icccm.so.4()(64bit)
+Requires:       libxcb-image.so.0()(64bit)
+Requires:       libxcb-keysyms.so.1()(64bit)
+Requires:       libxcb-randr.so.0()(64bit)
+Requires:       libxcb-render.so.0()(64bit)
+Requires:       libxcb-render-util.so.0()(64bit)
+Requires:       libxcb-shape.so.0()(64bit)
+Requires:       libxcb-shm.so.0()(64bit)
+Requires:       libxcb-sync.so.1()(64bit)
+Requires:       libxcb-util.so.1()(64bit)
+Requires:       libxcb-xfixes.so.0()(64bit)
+Requires:       libxcb-xkb.so.1()(64bit)
+Requires:       libxkbcommon.so.0()(64bit)
+Requires:       libxkbcommon-x11.so.0()(64bit)
+Requires:       libwayland-client.so.0()(64bit)
+Requires:       libwayland-cursor.so.0()(64bit)
+Requires:       libwayland-egl.so.1()(64bit)
+Requires:       libfontconfig.so.1()(64bit)
+Requires:       libfreetype.so.6()(64bit)
+Requires:       libharfbuzz.so.0()(64bit)
+Requires:       libglib-2.0.so.0()(64bit)
+Requires:       libdbus-1.so.3()(64bit)
+Requires:       libudev.so.1()(64bit)
+Requires:       libsystemd.so.0()(64bit)
+Requires:       libasound.so.2()(64bit)
+Requires:       libpulse.so.0()(64bit)
+Requires:       libpipewire-0.3.so.0()(64bit)
+Requires:       libjack.so.0()(64bit)
+Requires:       libdrm.so.2()(64bit)
+Requires:       libgbm.so.1()(64bit)
+Requires:       libva.so.2()(64bit)
+Requires:       libva-drm.so.2()(64bit)
+Requires:       libva-x11.so.2()(64bit)
+Requires:       libvdpau.so.1()(64bit)
+Requires:       libvulkan.so.1()(64bit)
+Requires:       libOpenCL.so.1()(64bit)
+Requires:       libvpl.so.2()(64bit)
+Requires:       libsmbclient.so.0()(64bit)
 
 %description
 Reva Player media player bundled with its Qt/libmpv runtime. This RPM installs
@@ -629,6 +690,8 @@ copy_optional_platform_theme_plugins "${qt_plugins_dir}" "${bundle_root}/plugins
 copy_optional_qt_runtime_libraries "${bundle_root}/lib"
 copy_supported_qt_translations "${qt_translations_dir}" "${bundle_root}/translations"
 prune_translations "${bundle_root}/translations"
+prune_bundled_qt_plugins "${bundle_root}/plugins"
+prune_bundled_system_libraries "${bundle_root}/lib"
 
 cp -f "${install_root}/bin/${APP_BINARY_NAME}" "${bundle_root}/bin/${APP_BINARY_NAME}.bin"
 write_wrapper_binary "${bundle_root}/bin/${APP_BINARY_NAME}"
@@ -655,7 +718,10 @@ cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/re
 if [ "${REVAPLAYER_BUNDLE_STRIP:-0}" = "1" ]; then
     strip_elf_files "${bundle_root}"
 fi
-verify_no_unresolved_elf_dependencies "${bundle_root}"
+bundle_recursive_elf_dependencies "${bundle_root}" "${bundle_root}/lib"
+prune_bundled_system_libraries "${bundle_root}/lib"
+patch_bundle_elf_rpaths "${bundle_root}"
+verify_bundled_elf_dependencies "${bundle_root}" "${bundle_root}/lib"
 normalize_package_permissions "${package_root}" "${bundle_root}"
 write_spec_file "${spec_path}" "${package_root}" "${version}"
 
@@ -672,4 +738,9 @@ latest_package="$(find "${output_dir}" -type f -name "${PACKAGE_NAME}-${version}
     | awk 'NR == 1 {print $2}')"
 
 [ -n "${latest_package}" ] || die "RPM package was not created in ${output_dir}"
+final_package="${output_dir}/${PACKAGE_NAME}-${version}-${PACKAGE_RELEASE}.${rpm_arch}.rpm"
+if [ "${latest_package}" != "${final_package}" ]; then
+    cp -f "${latest_package}" "${final_package}"
+    latest_package="${final_package}"
+fi
 printf '%s bundled RPM package: %s\n' "${APP_DISPLAY_NAME}" "${latest_package}"

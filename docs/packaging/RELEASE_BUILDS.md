@@ -2,6 +2,8 @@
 
 Use this page for reproducible release artifact builds. Local verification should be repeated for every release version.
 
+Verified for v1.0.0 on 2026-05-10.
+
 ## Commands
 
 Run tests before publishing:
@@ -12,20 +14,26 @@ cmake --build /tmp/reva-player-build-check -j4
 ctest --test-dir /tmp/reva-player-build-check --output-on-failure
 ```
 
-Build the official DEB:
+Build the primary AppImage:
 
 ```bash
-scripts/build-deb.sh
+scripts/build-appimage.sh --version 1.0.0
 ```
 
-This builds the bundled runtime DEB by default. Use `scripts/build-deb.sh --system`
-only when you intentionally want the small system-library DEB for comparison.
-
-Build the primary AppImage when AppImage tooling is installed:
+Build the official DEB from the prepared AppDir payload:
 
 ```bash
-scripts/build-appimage.sh
+scripts/build-deb.sh --bundle-source dist/AppDir/usr --version 1.0.0
 ```
+
+Build the official RPM from the same AppDir payload:
+
+```bash
+scripts/build-bundled-rpm.sh --bundle-source dist/AppDir/usr --version 1.0.0
+```
+
+Use `scripts/build-deb.sh --system` only when you intentionally want the small
+system-library DEB for comparison.
 
 Fallback AppImage build when AppImage tooling is unavailable:
 
@@ -36,28 +44,29 @@ scripts/repack-appimage-fallback.sh \
 ```
 
 The fallback path writes a fresh runtime payload to
-`dist/appimage-repack/AppDir/usr`. Use that same payload for bundled DEB and RPM
-artifacts so the three release formats carry the same Qt/libmpv runtime.
-
-Build the official DEB from the prepared AppDir payload:
+`dist/appimage-repack/AppDir/usr`. If you use the fallback, pass that same
+payload to the DEB and RPM scripts:
 
 ```bash
-scripts/build-deb.sh --bundle-source dist/appimage-repack/AppDir/usr
-```
-
-Build the bundled RPM from the prepared AppDir payload:
-
-```bash
-scripts/build-bundled-rpm.sh --bundle-source dist/appimage-repack/AppDir/usr
+scripts/build-deb.sh --bundle-source dist/appimage-repack/AppDir/usr --version 1.0.0
+scripts/build-bundled-rpm.sh --bundle-source dist/appimage-repack/AppDir/usr --version 1.0.0
 ```
 
 ## Local Artifacts
 
 | Format | Path | Notes |
 | --- | --- | --- |
-| AppImage | `dist/appimage/final/Reva-Player-<version>-x86_64.AppImage` | Built by AppImage tooling or fallback repack from an existing AppImage runtime. |
-| DEB | `dist/deb/revaplayer_<version>_amd64.deb` | Bundled runtime DEB installed under `/opt/revaplayer` with `/usr/bin/RevaPlayer`. |
-| RPM | `dist/rpm/x86_64/revaplayer-<version>-1.x86_64.rpm` | Bundled runtime RPM installed under `/opt/revaplayer` with `/usr/bin/RevaPlayer`. |
+| AppImage | `dist/appimage/final/RevaPlayer-v<version>-x86_64.AppImage` | Built by AppImage tooling or fallback repack from an existing AppImage runtime. |
+| DEB | `dist/deb/reva-player_<version>_amd64.deb` | Bundled runtime DEB installed under `/opt/revaplayer` with `/usr/bin/RevaPlayer`. |
+| RPM | `dist/rpm/reva-player-<version>-1.x86_64.rpm` | Bundled runtime RPM installed under `/opt/revaplayer` with `/usr/bin/RevaPlayer`. |
+
+Release assets copied for upload:
+
+```text
+release/v1.0.0/RevaPlayer-v1.0.0-x86_64.AppImage
+release/v1.0.0/reva-player_1.0.0_amd64.deb
+release/v1.0.0/reva-player-1.0.0-1.x86_64.rpm
+```
 
 ## Verification Checklist
 
@@ -67,6 +76,9 @@ scripts/build-bundled-rpm.sh --bundle-source dist/appimage-repack/AppDir/usr
 - Run CTest.
 - Confirm AppImage, bundled DEB, and bundled RPM builds fail if any bundled ELF
   file reports an unresolved `ldd` dependency.
+- Confirm DEB/RPM do not bundle host-sensitive graphics, audio, X11/Wayland,
+  DBus, Samba, or kernel-adjacent libraries; those should be package manager
+  dependencies.
 - Check AppImage `--version` with `APPIMAGE_EXTRACT_AND_RUN=1`.
 - Check bundled DEB `--version` from extracted package contents.
 - Check bundled RPM `--version` from extracted package contents.

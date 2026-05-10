@@ -2,7 +2,7 @@
 
 This document lists build commands and packaging commands that are present in the repository. Commands marked "Needs verification" require target-system testing before release use.
 
-Verified against repository files on 2026-04-25.
+Verified against repository files on 2026-05-10.
 
 ## Requirements
 
@@ -93,7 +93,6 @@ ctest --test-dir build --output-on-failure
 Tests declared by CMake:
 
 - `RevaPlayer_tests`
-- `RevaPlayer_legacy_name_audit`
 
 The test environment sets `QT_QPA_PLATFORM=offscreen` and `XDG_DATA_HOME=/tmp/revaplayer-tests`.
 

@@ -56,21 +56,21 @@ playlists, progress, bookmarks, and subtitles organized in one local workspace.
 ### AppImage
 
 ```bash
-chmod +x Reva-Player-*.AppImage
-./Reva-Player-*.AppImage
+chmod +x RevaPlayer-v*.AppImage
+./RevaPlayer-v*.AppImage
 ```
 
 ### DEB
 
 ```bash
-sudo apt install ./revaplayer_*.deb
+sudo apt install ./reva-player_*.deb
 RevaPlayer
 ```
 
 ### RPM
 
 ```bash
-sudo dnf install ./revaplayer-*.rpm
+sudo dnf install ./reva-player-*.rpm
 RevaPlayer
 ```
 

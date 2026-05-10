@@ -5,7 +5,7 @@ DEB is the native package format for Debian and Ubuntu-family systems. Reva Play
 - Release bundled DEB through `scripts/build-deb.sh` / `scripts/build-bundled-deb.sh`.
 - Small system-library DEB through CPack in `CMakeLists.txt`, available as an advanced option.
 
-Verified against repository files and a local bundled DEB build on 2026-04-26.
+Verified against repository files and a local bundled DEB build path on 2026-05-10.
 
 ## Target Systems
 
@@ -43,17 +43,30 @@ There are no repository-verified default config files installed outside the SQLi
 ## Dependencies
 
 The release DEB is bundled. It installs the application under `/opt/revaplayer`,
-provides `/usr/bin/RevaPlayer`, and includes the Qt/libmpv/FFmpeg runtime copied
+provides `/usr/bin/RevaPlayer`, and includes the Qt/libmpv/media runtime copied
 from the AppImage AppDir.
 
 Qt DBus is a build-time Qt component and a runtime library requirement for the
-desktop sleep-inhibition path. Bundled DEB builds copy Qt DBus/libdbus when they
-are available in the source runtime.
+desktop sleep-inhibition path. Bundled DEB builds include the Qt DBus module
+when it is present in the source runtime, while `libdbus` remains a system
+dependency.
 
-The 2026-04-26 bundled package dependencies on amd64 are:
+The bundled package intentionally does not ship host-sensitive graphics, audio,
+desktop session, X11/Wayland, DBus, Samba, or kernel-adjacent libraries. Those
+are declared as package dependencies so `apt` can install the versions that
+match the target system.
+
+The v1.0.0 bundled package dependency policy on amd64 is:
 
 ```text
-bash, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libglx0, libglvnd0, libopengl0, libegl1, libx11-6, libx11-xcb1, libxcb1, libxcb-dri3-0, libdrm2, libgbm1, libfontconfig1, libfreetype6, libharfbuzz0b, libasound2t64 | libasound2, libpipewire-0.3-0t64 | libpipewire-0.3-0, libglib2.0-0t64 | libglib2.0-0, libdbus-1-3
+bash, libc6, libstdc++6, libgcc-s1, zlib1g,
+libgl1, libglx0, libopengl0, libegl1, libglvnd0,
+X11/XCB/Wayland platform libraries,
+fontconfig/freetype/harfbuzz/glib desktop libraries,
+DBus/systemd/udev,
+ALSA/PulseAudio/PipeWire/JACK,
+DRM/GBM/VA-API/VDPAU/Vulkan/OpenCL/VPL,
+libsmbclient
 ```
 
 These are base OS, graphics, and audio libraries that should come from the target
@@ -66,7 +79,7 @@ The small system-library CPack DEB currently sets:
 - Qt 5: `libqt5sql5-sqlite, qtwayland5`
 - `CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON`
 
-The 2026-04-26 local system-library package generated these dependencies on amd64:
+A previous local system-library package generated these dependencies on amd64:
 
 ```text
 libqt6sql6-sqlite, qt6-wayland, libc6 (>= 2.34), libgcc-s1 (>= 3.0), libmpv2 (>= 0.29), libqt6core6t64 (>= 6.9.1), libqt6gui6 (>= 6.9.1), libqt6openglwidgets6 (>= 6.1.2), libqt6sql6 (>= 6.1.2), libqt6widgets6 (>= 6.3.0), libstdc++6 (>= 14)
@@ -80,19 +93,19 @@ Debian/Ubuntu release.
 Preferred release command:
 
 ```bash
-scripts/build-deb.sh
+scripts/build-deb.sh --bundle-source dist/AppDir/usr --version 1.0.0
 ```
 
 Output:
 
 ```text
-dist/deb/revaplayer_<version>_<arch>.deb
+dist/deb/reva-player_<version>_<arch>.deb
 ```
 
 Manual equivalent:
 
 ```bash
-scripts/build-bundled-deb.sh
+scripts/build-bundled-deb.sh --bundle-source dist/AppDir/usr --version 1.0.0
 ```
 
 Small system-library DEB for development/packaging comparison:

@@ -43,6 +43,8 @@ AppDir/
 appimage-build/
 appimage-work/
 rpmbuild/
+release/
+
 
 # Generated package artifacts
 *.AppImage
@@ -72,3 +74,4 @@ rpmbuild/
 # Runtime/generated media cache
 thumbnails/
 cache/
+

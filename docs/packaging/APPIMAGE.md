@@ -2,7 +2,7 @@
 
 AppImage provides a portable Linux application image that can run without system package installation. Reva Player has repository scripts for building, repacking, local installing, and uninstalling AppImage artifacts.
 
-Verified against repository files and a local fallback build on 2026-04-26.
+Verified against repository files and the v1.0.0 packaging path on 2026-05-10.
 
 ## Scripts
 
@@ -46,7 +46,7 @@ scripts/build-appimage.sh \
 Output name format:
 
 ```text
-dist/appimage/Reva-Player-<version>-<arch>.AppImage
+dist/appimage/RevaPlayer-v<version>-<arch>.AppImage
 ```
 
 Fallback repack:
@@ -80,6 +80,9 @@ old source AppImage payload.
 
 Before writing the final image, the AppImage scripts check bundled ELF files with
 `ldd` when available and fail the build if a dependency reports `not found`.
+Low-level host-sensitive graphics, audio, desktop session, X11/Wayland, DBus,
+Samba, and kernel-adjacent libraries are pruned from the bundle where possible
+so they come from the target system.
 
 ## Desktop Integration
 
@@ -94,7 +97,7 @@ The AppDir includes:
 Local integration is handled by:
 
 ```bash
-scripts/install-appimage-local.sh /path/to/Reva-Player-<version>-<arch>.AppImage
+scripts/install-appimage-local.sh /path/to/RevaPlayer-v<version>-<arch>.AppImage
 ```
 
 Uninstall local integration:
@@ -128,8 +131,8 @@ AppImage does not change the application storage model:
 ## Smoke Tests
 
 ```bash
-APPIMAGE_EXTRACT_AND_RUN=1 ./dist/appimage/Reva-Player-<version>-<arch>.AppImage --version
-QT_QPA_PLATFORM=minimal APPIMAGE_EXTRACT_AND_RUN=1 timeout 8s ./dist/appimage/Reva-Player-<version>-<arch>.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./dist/appimage/RevaPlayer-v<version>-<arch>.AppImage --version
+QT_QPA_PLATFORM=minimal APPIMAGE_EXTRACT_AND_RUN=1 timeout 8s ./dist/appimage/RevaPlayer-v<version>-<arch>.AppImage
 ```
 
 Needs verification: real playback on target desktops cannot be replaced by `minimal` smoke tests.

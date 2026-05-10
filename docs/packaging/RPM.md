@@ -4,6 +4,8 @@ RPM is the native package family for Fedora, openSUSE, RHEL, AlmaLinux, and Rock
 
 Status: Implemented through `scripts/build-bundled-rpm.sh`; still needs target-system verification on clean RPM-family installations.
 
+Verified against repository files and the v1.0.0 packaging path on 2026-05-10.
+
 ## Target Systems
 
 - Fedora
@@ -47,7 +49,12 @@ The bundled RPM layout is:
 
 ## mpv And Runtime Dependencies
 
-The release RPM bundles Qt, Qt DBus when available, libmpv, FFmpeg/media runtime libraries, Qt platform plugins, Qt SQLite plugin, Qt translations, and desktop metadata under `/opt/revaplayer`. It still relies on host kernel, glibc, GPU/GL stack, audio stack, and desktop services.
+The release RPM bundles Qt, Qt DBus when available, libmpv, FFmpeg/media runtime libraries, Qt platform plugins, Qt SQLite plugin, Qt translations, and desktop metadata under `/opt/revaplayer`.
+
+The RPM intentionally leaves host-sensitive graphics, audio, desktop session,
+X11/Wayland, DBus, Samba, and kernel-adjacent libraries to the target system.
+The spec declares those as soname `Requires:` entries so `dnf` can resolve them
+to native distribution packages.
 
 The bundled RPM script verifies bundled ELF dependencies with `ldd` when the
 tool is available and stops the build if any dependency is unresolved.
@@ -57,7 +64,7 @@ Needs verification: package availability and names for each target distribution.
 ## Build Command
 
 ```bash
-scripts/build-bundled-rpm.sh
+scripts/build-bundled-rpm.sh --bundle-source dist/AppDir/usr --version 1.0.0
 ```
 
 ## Uninstall And Upgrade

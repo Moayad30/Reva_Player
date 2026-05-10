@@ -32,12 +32,15 @@ Use this checklist for every release artifact.
 - [x] `desktop-file-validate` passed.
 - [x] `appstreamcli validate --no-net` passed.
 - [x] Release build and CTest passed locally.
-- [x] AppImage fallback build produced a versioned `Reva-Player-<version>-x86_64.AppImage`.
-- [x] Bundled DEB build produced a versioned `revaplayer_<version>_amd64.deb`.
-- [x] Bundled RPM build path exists through `scripts/build-bundled-rpm.sh`.
+- [x] AppImage build produced a versioned `RevaPlayer-v<version>-x86_64.AppImage`.
+- [x] Bundled DEB build produced a versioned `reva-player_<version>_amd64.deb`.
+- [x] Bundled RPM build produced a versioned `reva-player-<version>-1.x86_64.rpm`.
 - [x] AppImage `--version` passed with `APPIMAGE_EXTRACT_AND_RUN=1`.
 - [x] Bundled DEB `--version` passed from extracted package contents.
-- [x] AppImage and build-tree binary launched with temporary HOME under `QT_QPA_PLATFORM=minimal` until timeout.
+- [x] Bundled RPM `--version` passed from extracted package contents.
+- [x] AppImage, bundled DEB, bundled RPM, and build-tree binary launched with temporary HOME under `QT_QPA_PLATFORM=minimal` until timeout.
+- [x] DEB/RPM package dependency metadata confirms host-sensitive libraries are system dependencies.
+- [x] Bundled DEB/RPM payloads do not include host-sensitive graphics, audio, X11/Wayland, DBus, Samba, or kernel-adjacent libraries under `/opt/revaplayer/lib`.
 - [ ] Direct AppImage FUSE mount was not available on this machine.
 - [ ] Real video/audio/subtitle playback still needs a graphical desktop/manual media test.
 - [ ] Clean Debian/Ubuntu VM install, upgrade, and uninstall still need target-system verification.

@@ -35,6 +35,19 @@ int main(int argc, char *argv[])
             std::printf("Reva Player 1.0.0\n");
             return 0;
         }
+        if (std::strcmp(argv[index], "--help") == 0 || std::strcmp(argv[index], "-h") == 0) {
+            std::printf(
+                "Usage: RevaPlayer [options] [media...]\n"
+                "\n"
+                "Linux desktop media player built with Qt Widgets and libmpv.\n"
+                "\n"
+                "Options:\n"
+                "  -h, --help       Show this help message and exit.\n"
+                "  -v, --version    Show version information and exit.\n"
+                "  -u, --url <url>  Open a media URL on startup.\n"
+            );
+            return 0;
+        }
     }
 
     QApplication application(argc, argv);

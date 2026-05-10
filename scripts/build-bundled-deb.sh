@@ -8,8 +8,10 @@ readonly APP_DISPLAY_NAME="Reva Player"
 readonly APP_ID="io.github.moayad30.revaplayer"
 readonly DESKTOP_ID="${APP_ID}.desktop"
 readonly ICON_NAME="revaplayer"
-readonly PACKAGE_NAME="revaplayer"
+readonly PACKAGE_NAME="reva-player"
 readonly PACKAGE_INSTALL_ROOT="/opt/revaplayer"
+
+source "${SCRIPT_DIR}/lib/bundle-runtime.sh"
 
 build_dir="/tmp/reva-player-deb-build"
 install_root="/tmp/reva-player-install-check"
@@ -162,12 +164,14 @@ copy_optional_qt_runtime_plugins() {
 
     local destination_root="$2"
     mkdir -p "${destination_root}/platforms" \
+             "${destination_root}/iconengines" \
              "${destination_root}/wayland-decoration-client" \
              "${destination_root}/wayland-graphics-integration-client" \
              "${destination_root}/wayland-shell-integration"
 
     local file_path=""
     for file_path in \
+        "${plugins_dir}/platforms/libqwayland.so" \
         "${plugins_dir}/platforms/libqwayland-egl.so" \
         "${plugins_dir}/platforms/libqwayland-generic.so" \
         "${plugins_dir}/platforms/libqminimal.so" \
@@ -176,6 +180,10 @@ copy_optional_qt_runtime_plugins() {
             cp -f "${file_path}" "${destination_root}/$(basename -- "$(dirname -- "${file_path}")")/"
         fi
     done
+
+    if [ -f "${plugins_dir}/iconengines/libqsvgicon.so" ]; then
+        cp -f "${plugins_dir}/iconengines/libqsvgicon.so" "${destination_root}/iconengines/"
+    fi
 
     local optional_dir=""
     for optional_dir in \
@@ -198,14 +206,10 @@ copy_optional_qt_runtime_libraries() {
         /lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
         /lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /lib/x86_64-linux-gnu/libdbus-1.so.3 \
         /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 \
         /usr/lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /usr/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
-        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /usr/lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /usr/lib/x86_64-linux-gnu/libdbus-1.so.3; do
+        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6; do
         if [ -f "${library_path}" ]; then
             cp -f "${library_path}" "${destination_root}/"
         fi
@@ -218,9 +222,7 @@ copy_optional_qt_runtime_libraries() {
             libQt6DBus.so.6 \
             libQt5DBus.so.5 \
             libQt6WaylandClient.so.6 \
-            libQt6WaylandEglClientHwIntegration.so.6 \
-            libwayland-client.so.0 \
-            libdbus-1.so.3; do
+            libQt6WaylandEglClientHwIntegration.so.6; do
             detected_path="$(ldconfig -p 2>/dev/null | awk -v library_name="${library_name}" '$1 == library_name && detected_path == "" { detected_path = $NF } END { print detected_path }')"
             if [ -f "${detected_path}" ]; then
                 cp -f "${detected_path}" "${destination_root}/"
@@ -418,7 +420,23 @@ Priority: optional
 Architecture: ${architecture}
 Maintainer: Reva Player <maintainers@revaplayer.local>
 Installed-Size: ${installed_size}
-Depends: bash, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libglx0, libglvnd0, libopengl0, libegl1, libx11-6, libx11-xcb1, libxcb1, libxcb-dri3-0, libdrm2, libgbm1, libfontconfig1, libfreetype6, libharfbuzz0b, libasound2t64 | libasound2, libpipewire-0.3-0t64 | libpipewire-0.3-0, libglib2.0-0t64 | libglib2.0-0, libdbus-1-3
+Depends: bash, libc6, libstdc++6, libgcc-s1, zlib1g,
+ libgl1, libglx0, libopengl0, libegl1, libglvnd0,
+ libx11-6, libx11-xcb1, libxau6, libxext6, libxfixes3, libxi6,
+ libxrandr2, libxrender1, libxss1, libxcb1, libxcb-cursor0,
+ libxcb-dri3-0, libxcb-glx0, libxcb-icccm4, libxcb-image0,
+ libxcb-keysyms1, libxcb-randr0, libxcb-render0,
+ libxcb-render-util0, libxcb-shape0, libxcb-shm0, libxcb-sync1,
+ libxcb-util1, libxcb-xfixes0, libxcb-xkb1,
+ libxkbcommon0, libxkbcommon-x11-0,
+ libwayland-client0, libwayland-cursor0, libwayland-egl1,
+ libfontconfig1, libfreetype6, libharfbuzz0b,
+ libglib2.0-0t64 | libglib2.0-0, libdbus-1-3, libudev1, libsystemd0,
+ libasound2t64 | libasound2, libpulse0,
+ libpipewire-0.3-0t64 | libpipewire-0.3-0,
+ libjack0 | libjack-jackd2-0,
+ libdrm2, libgbm1, libva2, libva-drm2, libva-x11-2,
+ libvdpau1, libvulkan1, ocl-icd-libopencl1, libvpl2, libsmbclient
 Recommends: kdialog | zenity
 Description: Reva Player bundled offline Debian package
  Reva Player media player bundled with its Qt/libmpv runtime.
@@ -593,6 +611,8 @@ copy_optional_qt_runtime_plugins "${qt_plugins_dir}" "${bundle_root}/plugins"
 copy_optional_qt_runtime_libraries "${bundle_root}/lib"
 copy_supported_qt_translations "${qt_translations_dir}" "${bundle_root}/translations"
 prune_translations "${bundle_root}/translations"
+prune_bundled_qt_plugins "${bundle_root}/plugins"
+prune_bundled_system_libraries "${bundle_root}/lib"
 
 cp -f "${install_root}/bin/${APP_BINARY_NAME}" "${bundle_root}/bin/${APP_BINARY_NAME}.bin"
 write_wrapper_binary "${bundle_root}/bin/${APP_BINARY_NAME}"
@@ -619,7 +639,10 @@ cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/re
 if [ "${REVAPLAYER_BUNDLE_STRIP:-0}" = "1" ]; then
     strip_elf_files "${bundle_root}"
 fi
-verify_no_unresolved_elf_dependencies "${bundle_root}"
+bundle_recursive_elf_dependencies "${bundle_root}" "${bundle_root}/lib"
+prune_bundled_system_libraries "${bundle_root}/lib"
+patch_bundle_elf_rpaths "${bundle_root}"
+verify_bundled_elf_dependencies "${bundle_root}" "${bundle_root}/lib"
 
 write_postinst_file "${debian_root}/postinst"
 write_postrm_file "${debian_root}/postrm"

@@ -39,7 +39,7 @@ readonly DESKTOP_SHORTCUT_PATH="${DESKTOP_SHORTCUT_DIR}/${APP_DISPLAY_NAME}.desk
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install-appimage-local.sh /path/to/Reva-Player-<version>.AppImage
+Usage: scripts/install-appimage-local.sh /path/to/RevaPlayer-v<version>.AppImage
 
 Installs the AppImage for the current user under ~/.local, refreshes the
 desktop launcher, desktop shortcut, and icon, and removes previously installed

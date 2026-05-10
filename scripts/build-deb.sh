@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-readonly PACKAGE_NAME="revaplayer"
+readonly PACKAGE_NAME="reva-player"
 
 build_dir="/tmp/reva-player-deb-build"
 output_dir=""
@@ -11,6 +11,7 @@ qt_major="6"
 generator=""
 bundle_source=""
 package_mode="bundled"
+app_version=""
 
 usage() {
     cat <<'EOF'
@@ -30,6 +31,7 @@ Options:
   --bundle-source DIR Runtime bundle source directory
   --bundled           Build bundled runtime DEB (default)
   --system            Build small system-library CPack DEB
+  --version VERSION   Override detected bundled package version
   --help              Show this help
 EOF
 }
@@ -83,6 +85,10 @@ while [ "$#" -gt 0 ]; do
             package_mode="system"
             shift
             ;;
+        --version)
+            app_version="$2"
+            shift 2
+            ;;
         --help)
             usage
             exit 0
@@ -131,6 +137,9 @@ if [ "${package_mode}" = "bundled" ]; then
     fi
     if [ -n "${bundle_source}" ]; then
         bundled_args+=(--bundle-source "${bundle_source}")
+    fi
+    if [ -n "${app_version}" ]; then
+        bundled_args+=(--version "${app_version}")
     fi
 
     "${PROJECT_ROOT}/scripts/build-bundled-deb.sh" "${bundled_args[@]}"

@@ -5,10 +5,12 @@ readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 readonly APP_BINARY_NAME="RevaPlayer"
 readonly APP_DISPLAY_NAME="Reva Player"
-readonly APP_PACKAGE_STEM="Reva-Player"
+readonly APP_PACKAGE_STEM="RevaPlayer"
 readonly APP_ID="io.github.moayad30.revaplayer"
 readonly DESKTOP_ID="${APP_ID}.desktop"
 readonly ICON_NAME="revaplayer"
+
+source "${SCRIPT_DIR}/lib/bundle-runtime.sh"
 
 build_dir="${PROJECT_ROOT}/build-appimage"
 appdir="${PROJECT_ROOT}/dist/AppDir"
@@ -344,12 +346,14 @@ copy_optional_qt_runtime_plugins() {
 
     local destination_root="${appdir}/usr/plugins"
     mkdir -p "${destination_root}/platforms" \
+             "${destination_root}/iconengines" \
              "${destination_root}/wayland-decoration-client" \
              "${destination_root}/wayland-graphics-integration-client" \
              "${destination_root}/wayland-shell-integration"
 
     local file_path=""
     for file_path in \
+        "${plugins_dir}/platforms/libqwayland.so" \
         "${plugins_dir}/platforms/libqwayland-egl.so" \
         "${plugins_dir}/platforms/libqwayland-generic.so" \
         "${plugins_dir}/platforms/libqminimal.so" \
@@ -358,6 +362,10 @@ copy_optional_qt_runtime_plugins() {
             cp -f "${file_path}" "${destination_root}/platforms/"
         fi
     done
+
+    if [ -f "${plugins_dir}/iconengines/libqsvgicon.so" ]; then
+        cp -f "${plugins_dir}/iconengines/libqsvgicon.so" "${destination_root}/iconengines/"
+    fi
 
     local optional_dir=""
     for optional_dir in \
@@ -380,14 +388,10 @@ copy_optional_qt_runtime_libraries() {
         /lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
         /lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /lib/x86_64-linux-gnu/libdbus-1.so.3 \
         /usr/lib/x86_64-linux-gnu/libQt6DBus.so.6 \
         /usr/lib/x86_64-linux-gnu/libQt5DBus.so.5 \
         /usr/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6 \
-        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6 \
-        /usr/lib/x86_64-linux-gnu/libwayland-client.so.0 \
-        /usr/lib/x86_64-linux-gnu/libdbus-1.so.3; do
+        /usr/lib/x86_64-linux-gnu/libQt6WaylandEglClientHwIntegration.so.6; do
         if [ -e "${library_path}" ]; then
             cp -f "${library_path}" "${destination_root}/"
         fi
@@ -400,9 +404,7 @@ copy_optional_qt_runtime_libraries() {
             libQt6DBus.so.6 \
             libQt5DBus.so.5 \
             libQt6WaylandClient.so.6 \
-            libQt6WaylandEglClientHwIntegration.so.6 \
-            libwayland-client.so.0 \
-            libdbus-1.so.3; do
+            libQt6WaylandEglClientHwIntegration.so.6; do
             detected_path="$(ldconfig -p 2>/dev/null | awk -v library_name="${library_name}" '$1 == library_name && detected_path == "" { detected_path = $NF } END { print detected_path }')"
             if [ -f "${detected_path}" ]; then
                 cp -f "${detected_path}" "${destination_root}/"
@@ -706,7 +708,7 @@ readonly installed_desktop_path="${appdir}/usr/share/applications/${DESKTOP_ID}"
 readonly installed_metainfo_path="${appdir}/usr/share/metainfo/${APP_ID}.metainfo.xml"
 readonly installed_appdata_path="${appdir}/usr/share/metainfo/${APP_ID}.appdata.xml"
 readonly appimage_arch="$(uname -m)"
-readonly output_name="${APP_PACKAGE_STEM}-${app_version}-${appimage_arch}.AppImage"
+readonly output_name="${APP_PACKAGE_STEM}-v${app_version}-${appimage_arch}.AppImage"
 readonly output_path="${output_dir}/${output_name}"
 
 mkdir -p "${output_dir}"
@@ -768,12 +770,16 @@ copy_optional_qt_runtime_libraries
 write_qt_conf "${appdir}/usr/bin/qt.conf"
 
 restore_system_runtime_payload
-prune_runtime_libraries
+prune_bundled_qt_plugins "${appdir}/usr/plugins"
+prune_bundled_system_libraries "${appdir}/usr/lib"
+bundle_recursive_elf_dependencies "${appdir}" "${appdir}/usr/lib"
+prune_bundled_system_libraries "${appdir}/usr/lib"
+patch_bundle_elf_rpaths "${appdir}/usr"
 prune_appdir_payload
 if [ "${REVAPLAYER_APPIMAGE_STRIP:-0}" = "1" ]; then
     strip_elf_files "${appdir}"
 fi
-verify_no_unresolved_elf_dependencies "${appdir}"
+verify_bundled_elf_dependencies "${appdir}" "${appdir}/usr/lib"
 
 ln -sfn "usr/bin/${APP_BINARY_NAME}" "${appdir}/AppRun"
 ln -sfn "usr/share/applications/${DESKTOP_ID}" "${appdir}/${DESKTOP_ID}"

@@ -5,10 +5,12 @@ readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 readonly APP_BINARY_NAME="RevaPlayer"
 readonly APP_DISPLAY_NAME="Reva Player"
-readonly APP_PACKAGE_STEM="Reva-Player"
+readonly APP_PACKAGE_STEM="RevaPlayer"
 readonly APP_ID="io.github.moayad30.revaplayer"
 readonly DESKTOP_ID="${APP_ID}.desktop"
 readonly ICON_NAME="revaplayer"
+
+source "${SCRIPT_DIR}/lib/bundle-runtime.sh"
 
 build_dir="/tmp/reva-player-build-check"
 install_root="/tmp/reva-player-install-check"
@@ -50,8 +52,8 @@ detect_source_appimage() {
     local pattern=""
 
     for pattern in \
-        "${PROJECT_ROOT}/dist/appimage/final/Reva-Player-"*.AppImage \
-        "${PROJECT_ROOT}/dist/appimage/Reva-Player-"*.AppImage \
+        "${PROJECT_ROOT}/dist/appimage/final/RevaPlayer-v"*.AppImage \
+        "${PROJECT_ROOT}/dist/appimage/RevaPlayer-v"*.AppImage \
         "${PROJECT_ROOT}/dist/appimage/RevaPlayer-"*.AppImage; do
         for candidate in ${pattern}; do
             if [ -f "${candidate}" ]; then
@@ -443,7 +445,7 @@ fi
 
 version="$(detect_version)"
 arch="$(uname -m)"
-output_path="${output_dir}/${APP_PACKAGE_STEM}-${version}-${arch}.AppImage"
+output_path="${output_dir}/${APP_PACKAGE_STEM}-v${version}-${arch}.AppImage"
 runtime_path="${work_dir}/runtime"
 payload_path="${work_dir}/payload.squashfs"
 payload_source_path="${work_dir}/source.squashfs"
