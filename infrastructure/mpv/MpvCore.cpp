@@ -66,6 +66,50 @@ constexpr auto kChapterProperty = "chapter";
 constexpr auto kTrackListProperty = "track-list";
 constexpr int kDiagnosticsRefreshIntervalMs = 1000;
 
+bool isOptionalSubtitleProperty(const char *name)
+{
+    if (name == nullptr) {
+        return false;
+    }
+
+    return std::strcmp(name, kSubtitleDelayProperty) == 0
+        || std::strcmp(name, kSubtitleVisibilityProperty) == 0
+        || std::strcmp(name, kSubtitleScaleProperty) == 0
+        || std::strcmp(name, kSubtitlePositionProperty) == 0
+        || std::strcmp(name, kSubtitleFontProperty) == 0
+        || std::strcmp(name, kSubtitleFontSizeProperty) == 0
+        || std::strcmp(name, kSubtitleAssOverrideProperty) == 0;
+}
+
+bool isRecoverableOptionalPropertyFailure(const int errorCode)
+{
+    return errorCode == MPV_ERROR_PROPERTY_UNAVAILABLE
+        || errorCode == MPV_ERROR_PROPERTY_NOT_FOUND
+        || errorCode == MPV_ERROR_PROPERTY_ERROR;
+}
+
+QByteArray optionValueToString(const mpv_format format, void *value)
+{
+    if (value == nullptr) {
+        return {};
+    }
+
+    switch (format) {
+    case MPV_FORMAT_STRING: {
+        const char *rawValue = *static_cast<const char **>(value);
+        return rawValue != nullptr ? QByteArray(rawValue) : QByteArray {};
+    }
+    case MPV_FORMAT_FLAG:
+        return *static_cast<int *>(value) != 0 ? QByteArrayLiteral("yes") : QByteArrayLiteral("no");
+    case MPV_FORMAT_INT64:
+        return QByteArray::number(*static_cast<int64_t *>(value));
+    case MPV_FORMAT_DOUBLE:
+        return QByteArray::number(*static_cast<double *>(value), 'g', 15);
+    default:
+        return {};
+    }
+}
+
 QString extractBundledThumbfastScript()
 {
     QFile resourceFile(QStringLiteral(":/mpv/thumbfast.lua"));
@@ -153,10 +197,21 @@ QString thumbfastRuntimeBasePath()
     return QDir(runtimeDirectory).filePath(unique);
 }
 
+QString thumbfastMpvExecutablePath()
+{
+    const QFileInfo bundledMpv(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("mpv")));
+    if (bundledMpv.exists() && bundledMpv.isFile() && bundledMpv.isExecutable()) {
+        const QString canonical = bundledMpv.canonicalFilePath();
+        return canonical.isEmpty() ? bundledMpv.absoluteFilePath() : canonical;
+    }
+
+    return QStandardPaths::findExecutable(QStringLiteral("mpv"));
+}
+
 QByteArray thumbfastScriptOptions(const QString &runtimeBasePath)
 {
     const QString normalizedRuntimeBasePath = QDir::cleanPath(runtimeBasePath);
-    const QStringList options {
+    QStringList options {
         QStringLiteral("thumbfast-max_width=420"),
         QStringLiteral("thumbfast-max_height=420"),
         QStringLiteral("thumbfast-scale_factor=1"),
@@ -167,6 +222,12 @@ QByteArray thumbfastScriptOptions(const QString &runtimeBasePath)
         QStringLiteral("thumbfast-thumbnail=%1.out").arg(normalizedRuntimeBasePath),
         QStringLiteral("ytdl_hook-all_formats=yes"),
     };
+
+    const QString mpvExecutablePath = thumbfastMpvExecutablePath();
+    if (!mpvExecutablePath.trimmed().isEmpty()) {
+        options.push_back(QStringLiteral("thumbfast-mpv_path=%1").arg(QDir::cleanPath(mpvExecutablePath)));
+    }
+
     return options.join(QChar(',')).toUtf8();
 }
 
@@ -468,11 +529,11 @@ bool MpvCore::initialize(revaplayer::infrastructure::mpv::MpvRenderHost *renderH
     setStringOption("input-terminal", "no");
     setStringOption("input-vo-keyboard", "no");
     setStringOption("input-media-keys", "no");
-    setStringOption("media-controls", "no");
+    setStringOption("media-controls", "no", true);
     setStringOption("keep-open", "yes");
     setStringOption("idle", "yes");
     setStringOption("vo", "libmpv");
-    setStringOption("hwdec", "auto-safe");
+    setStringOption("hwdec", "no");
     // Keep mpv from spending CPU on very large background cache fill for long
     // local files while preserving normal forward/backward buffering.
     setStringOption("cache-secs", "60");
@@ -748,7 +809,11 @@ void MpvCore::setSubtitleDelay(double seconds)
         seconds = 0.0;
     }
 
-    setProperty(kSubtitleDelayProperty, MPV_FORMAT_DOUBLE, &seconds);
+    const bool accepted = setProperty(kSubtitleDelayProperty, MPV_FORMAT_DOUBLE, &seconds);
+    if (accepted && propertyCache_.subtitleDelay() != seconds) {
+        propertyCache_.setSubtitleDelay(seconds);
+        emit subtitleDelayChanged(seconds);
+    }
 }
 
 void MpvCore::adjustSubtitleDelay(const double deltaSeconds)
@@ -772,7 +837,11 @@ void MpvCore::setSubtitleVisible(const bool visible)
     }
 
     int visibleFlag = visible ? 1 : 0;
-    setProperty(kSubtitleVisibilityProperty, MPV_FORMAT_FLAG, &visibleFlag);
+    const bool accepted = setProperty(kSubtitleVisibilityProperty, MPV_FORMAT_FLAG, &visibleFlag);
+    if (accepted && propertyCache_.subtitleVisible() != visible) {
+        propertyCache_.setSubtitleVisible(visible);
+        emit subtitleVisibilityChanged(visible);
+    }
 }
 
 void MpvCore::toggleSubtitleVisible()
@@ -787,7 +856,11 @@ void MpvCore::setSubtitleScale(double scale)
     }
 
     double effectiveScale = revaplayer::application::clampSubtitleScale(scale);
-    setProperty(kSubtitleScaleProperty, MPV_FORMAT_DOUBLE, &effectiveScale);
+    const bool accepted = setProperty(kSubtitleScaleProperty, MPV_FORMAT_DOUBLE, &effectiveScale);
+    if (accepted && propertyCache_.subtitleScale() != effectiveScale) {
+        propertyCache_.setSubtitleScale(effectiveScale);
+        emit subtitleScaleChanged(effectiveScale);
+    }
 }
 
 void MpvCore::adjustSubtitleScale(const double delta)
@@ -810,8 +883,13 @@ void MpvCore::setSubtitlePosition(const int position)
         return;
     }
 
-    double effectivePosition = static_cast<double>(revaplayer::application::clampSubtitlePosition(position));
-    setProperty(kSubtitlePositionProperty, MPV_FORMAT_DOUBLE, &effectivePosition);
+    const int requestedPosition = revaplayer::application::clampSubtitlePosition(position);
+    double effectivePosition = static_cast<double>(requestedPosition);
+    const bool accepted = setProperty(kSubtitlePositionProperty, MPV_FORMAT_DOUBLE, &effectivePosition);
+    if (accepted && propertyCache_.subtitlePosition() != requestedPosition) {
+        propertyCache_.setSubtitlePosition(requestedPosition);
+        emit subtitlePositionChanged(requestedPosition);
+    }
 }
 
 void MpvCore::adjustSubtitlePosition(const int delta)
@@ -837,7 +915,11 @@ void MpvCore::setSubtitleFontFamily(const QString &fontFamily)
     const QString effectiveFamily = fontFamily.trimmed().isEmpty() ? QStringLiteral("sans-serif") : fontFamily.trimmed();
     QByteArray utf8Family = effectiveFamily.toUtf8();
     const char *rawFamily = utf8Family.constData();
-    setProperty(kSubtitleFontProperty, MPV_FORMAT_STRING, &rawFamily);
+    const bool accepted = setProperty(kSubtitleFontProperty, MPV_FORMAT_STRING, &rawFamily);
+    if (accepted && propertyCache_.subtitleFontFamily() != effectiveFamily) {
+        propertyCache_.setSubtitleFontFamily(effectiveFamily);
+        emit subtitleFontFamilyChanged(effectiveFamily);
+    }
 }
 
 void MpvCore::setSubtitleFontSize(const int fontSize)
@@ -846,8 +928,13 @@ void MpvCore::setSubtitleFontSize(const int fontSize)
         return;
     }
 
-    double effectiveSize = static_cast<double>(revaplayer::application::clampSubtitleFontSize(fontSize));
-    setProperty(kSubtitleFontSizeProperty, MPV_FORMAT_DOUBLE, &effectiveSize);
+    const int requestedSize = revaplayer::application::clampSubtitleFontSize(fontSize);
+    double effectiveSize = static_cast<double>(requestedSize);
+    const bool accepted = setProperty(kSubtitleFontSizeProperty, MPV_FORMAT_DOUBLE, &effectiveSize);
+    if (accepted && propertyCache_.subtitleFontSize() != requestedSize) {
+        propertyCache_.setSubtitleFontSize(requestedSize);
+        emit subtitleFontSizeChanged(requestedSize);
+    }
 }
 
 void MpvCore::setSubtitleAssOverride(const QString &mode)
@@ -859,7 +946,11 @@ void MpvCore::setSubtitleAssOverride(const QString &mode)
     const QString effectiveMode = revaplayer::application::normalizeSubtitleAssOverride(mode);
     QByteArray utf8Mode = effectiveMode.toUtf8();
     const char *rawMode = utf8Mode.constData();
-    setProperty(kSubtitleAssOverrideProperty, MPV_FORMAT_STRING, &rawMode);
+    const bool accepted = setProperty(kSubtitleAssOverrideProperty, MPV_FORMAT_STRING, &rawMode);
+    if (accepted && propertyCache_.subtitleAssOverride() != effectiveMode) {
+        propertyCache_.setSubtitleAssOverride(effectiveMode);
+        emit subtitleAssOverrideChanged(effectiveMode);
+    }
 }
 
 void MpvCore::cycleSubtitleAssOverride()
@@ -1258,6 +1349,10 @@ void MpvCore::handleEvent(mpv_event *event)
 void MpvCore::handlePropertyChange(const mpv_event_property &property)
 {
     const QByteArray propertyName = property.name != nullptr ? QByteArray(property.name) : QByteArray {};
+    if (property.format == MPV_FORMAT_NONE && isOptionalSubtitleProperty(property.name)) {
+        return;
+    }
+
     auto updateDiagnostics = [this](const auto &updater, const bool throttle = false) {
         auto diagnostics = propertyCache_.diagnostics();
         updater(diagnostics);
@@ -1637,6 +1732,18 @@ bool MpvCore::setProperty(const char *name, const mpv_format format, void *value
 {
     const int result = mpv_set_property(handle_, name, format, value);
     if (result < 0) {
+        if (isOptionalSubtitleProperty(name) && isRecoverableOptionalPropertyFailure(result)) {
+            const int optionResult = mpv_set_option(handle_, name, format, value);
+            if (optionResult >= 0) {
+                return true;
+            }
+
+            const QByteArray stringValue = optionValueToString(format, value);
+            if (!stringValue.isNull() && mpv_set_option_string(handle_, name, stringValue.constData()) >= 0) {
+                return true;
+            }
+            return true;
+        }
         emitMpvError(QStringLiteral("mpv property update failed for '%1'").arg(QString::fromUtf8(name)), result);
         return false;
     }
@@ -1659,10 +1766,13 @@ void MpvCore::emitMpvError(const QString &context, const int errorCode)
                            .arg(context, QString::fromUtf8(mpv_error_string(errorCode))));
 }
 
-void MpvCore::setStringOption(const char *name, const char *value) const
+void MpvCore::setStringOption(const char *name, const char *value, const bool ignoreMissing) const
 {
     if (handle_ != nullptr && name != nullptr && value != nullptr) {
         const int result = mpv_set_option_string(handle_, name, value);
+        if (ignoreMissing && result == MPV_ERROR_OPTION_NOT_FOUND) {
+            return;
+        }
         if (result < 0) {
             const_cast<MpvCore *>(this)->emitMpvError(
                 QStringLiteral("mpv option setup failed for '%1'").arg(QString::fromUtf8(name)),

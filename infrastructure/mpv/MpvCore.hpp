@@ -140,7 +140,7 @@ private:
     bool setProperty(const char *name, mpv_format format, void *value);
     bool setCommandProperty(const QString &name, const QString &value);
     void emitMpvError(const QString &context, int errorCode);
-    void setStringOption(const char *name, const char *value) const;
+    void setStringOption(const char *name, const char *value, bool ignoreMissing = false) const;
     void setStringOption(const char *name, const QByteArray &value) const;
     bool sendCommand(const QStringList &arguments);
     bool ensureReady();

@@ -1069,7 +1069,14 @@ void CoreTests::uiLanguageTranslations()
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Remove from Favorites")), QStringLiteral("إزالة من المفضلة"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Remove from List")), QStringLiteral("إزالة من القائمة"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Reset Progress")), QStringLiteral("تصفير التقدم"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Mark Watched Complete")), QStringLiteral("مشاهدة مكتملة"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Reset Progress for This List")), QStringLiteral("تصفير تقدم هذه القائمة"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Progress reset for selected items")),
+             QStringLiteral("تم تصفير تقدم العناصر المحددة"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Selected item marked as watched complete")),
+             QStringLiteral("تم تعيين العنصر المحدد كمشاهدة مكتملة"));
+    QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Selected items marked as watched complete")),
+             QStringLiteral("تم تعيين العناصر المحددة كمشاهدة مكتملة"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Selected item removed from favorites")), QStringLiteral("تمت إزالة العنصر المحدد من المفضلة"));
     QCOMPARE(revaplayer::application::translateUiText(QStringLiteral("Add File")), QStringLiteral("إضافة ملف"));
     QCOMPARE(revaplayer::application::subtitleAssOverrideLabel(QStringLiteral("strip")),

@@ -11,17 +11,26 @@ Binary release packages may include additional system/runtime libraries dependin
 - Project: https://www.qt.io/
 - Notes: When distributing binaries built with open-source Qt, comply with the applicable Qt open-source license obligations for the exact Qt build used.
 
+## Project License
+
+- Component: Reva Player application source code.
+- License: GNU General Public License version 3 or later (`GPL-3.0-or-later`).
+- License text: [LICENSE](LICENSE)
+- Notes: Third-party components retain their own licenses. Binary packages may
+  include or depend on GPL-compatible runtime libraries, depending on the target
+  package format and build host.
+
 ## mpv / libmpv
 
 - Purpose: media playback backend and rendering integration.
-- License: GPL-2.0-or-later by default; LGPL builds are possible only with suitable mpv build configuration and dependency choices.
+- License: GPL-compatible. mpv is commonly distributed under GPL terms, while LGPL builds are possible only with suitable mpv build configuration and dependency choices.
 - Project: https://mpv.io/
 - Notes: Reva Player release binaries that link to or bundle GPL libmpv are distributed under GPL-compatible terms.
 
 ## FFmpeg
 
 - Purpose: codec, demuxing, filtering, and media runtime functionality used through mpv/libmpv.
-- License: LGPL-2.1-or-later or GPL-2.0-or-later depending on FFmpeg build options and enabled external libraries.
+- License: LGPL or GPL-compatible terms depending on FFmpeg build options and enabled external libraries.
 - Project: https://ffmpeg.org/
 - Notes: Do not publish release binaries that use FFmpeg configured with nonfree components. Verify the FFmpeg configuration of any bundled runtime before release.
 
@@ -43,4 +52,4 @@ Binary release packages may include additional system/runtime libraries dependin
 - Path: [resources/mpv/thumbfast.lua](resources/mpv/thumbfast.lua)
 - License: Mozilla Public License 2.0 (`MPL-2.0`).
 - Project: https://github.com/po5/thumbfast
-- Notes: The vendored file contains its own MPL-2.0 notice and was not modified as part of the GPL license switch.
+- Notes: The vendored file contains its own MPL-2.0 notice and keeps its upstream license.

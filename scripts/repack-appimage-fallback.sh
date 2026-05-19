@@ -186,7 +186,7 @@ if [ -z "\${QT_QPA_PLATFORMTHEME:-}" ]; then
     esac
 fi
 
-exec "\${APPDIR}/usr/bin/${real_binary_name}" "\$@"
+exec -a "${APP_BINARY_NAME}" "\${APPDIR}/usr/bin/${real_binary_name}" -name "${APP_BINARY_NAME}" "\$@"
 EOF
 
     chmod +x "${wrapper_path}"
@@ -274,6 +274,20 @@ copy_optional_qt_runtime_libraries() {
                 cp -f "${detected_path}" "${destination_root}/"
             fi
         done
+    fi
+}
+
+copy_optional_mpv_thumbnailer() {
+    local destination_path="${appdir}/usr/bin/mpv"
+    local source_path="${REVAPLAYER_MPV:-}"
+
+    if [ -z "${source_path}" ]; then
+        source_path="$(command -v mpv 2>/dev/null || true)"
+    fi
+
+    if [ -n "${source_path}" ] && [ -x "${source_path}" ]; then
+        cp -f "${source_path}" "${destination_path}"
+        chmod 0755 "${destination_path}"
     fi
 }
 
@@ -508,6 +522,7 @@ copy_optional_qt_runtime_plugins "${qt_plugins_dir}"
 copy_optional_qt_runtime_libraries
 copy_supported_qt_translations "${qt_translations_dir}"
 copy_optional_platform_theme_plugins "${appdir}/usr/plugins/platformthemes"
+copy_optional_mpv_thumbnailer
 prune_payload "${appdir}"
 strip_elf_files "${appdir}"
 verify_no_unresolved_elf_dependencies "${appdir}"

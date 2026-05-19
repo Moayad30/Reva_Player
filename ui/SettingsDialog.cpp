@@ -69,6 +69,22 @@ void setHoverExplanation(QWidget *widget, const QString &text)
     widget->setWhatsThis(text);
 }
 
+void setFormRowVisible(QFormLayout *layout, QWidget *field, const bool visible)
+{
+    if (layout == nullptr || field == nullptr) {
+        return;
+    }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
+    layout->setRowVisible(field, visible);
+#else
+    field->setVisible(visible);
+    if (QWidget *label = layout->labelForField(field); label != nullptr) {
+        label->setVisible(visible);
+    }
+#endif
+}
+
 QString widgetSearchText(const QWidget *widget)
 {
     if (widget == nullptr) {
@@ -1248,7 +1264,7 @@ void SettingsDialog::buildUi()
     fullscreenRevealMarginSpinBox_->setRange(16, 240);
     fullscreenRevealMarginSpinBox_->setSuffix(QStringLiteral(" px"));
     fullscreenLayout->addRow(uiText("Reveal edge margin"), fullscreenRevealMarginSpinBox_);
-    fullscreenLayout->setRowVisible(fullscreenRevealMarginSpinBox_, false);
+    setFormRowVisible(fullscreenLayout, fullscreenRevealMarginSpinBox_, false);
 
     fullscreenEdgePanelsCheckBox_ = new QCheckBox(
         uiText("Open side panels when the pointer reaches the right edge in fullscreen"),
@@ -1308,8 +1324,8 @@ void SettingsDialog::buildUi()
     pointerLayout->addRow(uiText("Right-edge leave action"), pointerRightEdgeLeaveActionComboBox_);
     pointerLayout->addRow(uiText("Right-edge trigger margin"), pointerRightEdgeMarginSpinBox_);
     pointerLayout->addRow(uiText("Pointer leave delay"), pointerLeaveDelaySpinBox_);
-    pointerLayout->setRowVisible(pointerRightEdgeMarginSpinBox_, false);
-    pointerLayout->setRowVisible(pointerLeaveDelaySpinBox_, false);
+    setFormRowVisible(pointerLayout, pointerRightEdgeMarginSpinBox_, false);
+    setFormRowVisible(pointerLayout, pointerLeaveDelaySpinBox_, false);
     pointerLayout->addRow(pointerKeepControlsVisibleCheckBox_);
     auto *pointerNote = new QLabel(
         uiText("When the pointer touches the right edge, you can reveal the default panel, force a specific panel, or do nothing. Leave action controls what happens after the pointer leaves the edge or exits the video."),
@@ -1358,26 +1374,26 @@ void SettingsDialog::buildUi()
     controlBarTimelineThicknessSpinBox_->setRange(4, 18);
     controlBarTimelineThicknessSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Timeline thickness"), controlBarTimelineThicknessSpinBox_);
-    controlBarAppearanceLayout->setRowVisible(controlBarTimelineThicknessSpinBox_, false);
+    setFormRowVisible(controlBarAppearanceLayout, controlBarTimelineThicknessSpinBox_, false);
 
     controlBarTimelineHandleSizeSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarTimelineHandleSizeSpinBox_->setRange(10, 30);
     controlBarTimelineHandleSizeSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Timeline handle size"), controlBarTimelineHandleSizeSpinBox_);
-    controlBarAppearanceLayout->setRowVisible(controlBarTimelineHandleSizeSpinBox_, false);
+    setFormRowVisible(controlBarAppearanceLayout, controlBarTimelineHandleSizeSpinBox_, false);
 
     controlBarVolumeSliderThicknessSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarVolumeSliderThicknessSpinBox_->setRange(4, 18);
     controlBarVolumeSliderThicknessSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Volume slider thickness"), controlBarVolumeSliderThicknessSpinBox_);
-    controlBarAppearanceLayout->setRowVisible(controlBarVolumeSliderThicknessSpinBox_, false);
+    setFormRowVisible(controlBarAppearanceLayout, controlBarVolumeSliderThicknessSpinBox_, false);
 
     controlBarVolumeSliderWidthSpinBox_ = new QSpinBox(controlBarAppearanceGroup);
     controlBarVolumeSliderWidthSpinBox_->setRange(0, 320);
     controlBarVolumeSliderWidthSpinBox_->setSpecialValueText(uiText("Auto"));
     controlBarVolumeSliderWidthSpinBox_->setSuffix(QStringLiteral(" px"));
     controlBarAppearanceLayout->addRow(uiText("Volume slider width"), controlBarVolumeSliderWidthSpinBox_);
-    controlBarAppearanceLayout->setRowVisible(controlBarVolumeSliderWidthSpinBox_, false);
+    setFormRowVisible(controlBarAppearanceLayout, controlBarVolumeSliderWidthSpinBox_, false);
     Q_UNUSED(controlBarAppearanceGroup);
     auto *controlBarVisibilityGroup = new QGroupBox(uiText("Control Bar Visibility"), playbackPage);
     auto *controlBarVisibilityLayout = new QVBoxLayout(controlBarVisibilityGroup);
@@ -1437,13 +1453,13 @@ void SettingsDialog::buildUi()
     thumbnailPopupOffsetSpinBox_->setRange(8, 56);
     thumbnailPopupOffsetSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailsLayout->addRow(uiText("Timeline popup vertical offset"), thumbnailPopupOffsetSpinBox_);
-    thumbnailsLayout->setRowVisible(thumbnailPopupOffsetSpinBox_, false);
+    setFormRowVisible(thumbnailsLayout, thumbnailPopupOffsetSpinBox_, false);
 
     thumbnailPopupPaddingSpinBox_ = new QSpinBox(thumbnailsGroup);
     thumbnailPopupPaddingSpinBox_->setRange(0, 32);
     thumbnailPopupPaddingSpinBox_->setSuffix(QStringLiteral(" px"));
     thumbnailsLayout->addRow(uiText("Timeline popup screen padding"), thumbnailPopupPaddingSpinBox_);
-    thumbnailsLayout->setRowVisible(thumbnailPopupPaddingSpinBox_, false);
+    setFormRowVisible(thumbnailsLayout, thumbnailPopupPaddingSpinBox_, false);
 
     auto *sceneBrowserGroup = new QGroupBox(uiText("Scene Browser"), advancedPage);
     auto *sceneBrowserLayout = new QFormLayout(sceneBrowserGroup);

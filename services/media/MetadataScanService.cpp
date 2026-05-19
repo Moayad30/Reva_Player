@@ -150,13 +150,16 @@ bool mediaScanResultHasUsefulMetadata(const MediaScanResult &result)
         || !result.fileFormat.trimmed().isEmpty();
 }
 
-void setStringOption(mpv_handle *handle, const char *name, const char *value)
+void setStringOption(mpv_handle *handle, const char *name, const char *value, const bool ignoreMissing = false)
 {
     if (handle == nullptr || name == nullptr || value == nullptr) {
         return;
     }
 
     const int result = mpv_set_option_string(handle, name, value);
+    if (ignoreMissing && result == MPV_ERROR_OPTION_NOT_FOUND) {
+        return;
+    }
     if (result < 0) {
         qWarning("mpv option %s failed: %s", name, mpv_error_string(result));
     }
@@ -198,7 +201,7 @@ bool MetadataScanService::initialize()
     setStringOption(handle_, "input-terminal", "no");
     setStringOption(handle_, "input-vo-keyboard", "no");
     setStringOption(handle_, "input-media-keys", "no");
-    setStringOption(handle_, "media-controls", "no");
+    setStringOption(handle_, "media-controls", "no", true);
     setStringOption(handle_, "keep-open", "no");
     setStringOption(handle_, "idle", "yes");
     setStringOption(handle_, "pause", "yes");

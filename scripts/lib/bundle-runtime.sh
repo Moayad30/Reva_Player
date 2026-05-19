@@ -40,6 +40,16 @@ bundle_runtime_is_portable_runtime_library_name() {
     local library_name="$1"
 
     case "${library_name}" in
+        libva.so.*|\
+        libva-drm.so.*|\
+        libva-wayland.so.*|\
+        libva-x11.so.*|\
+        libvdpau.so.*|\
+        libOpenCL.so.*|\
+        libmfx.so.*|\
+        libxcb-xinput.so.*)
+            return 0
+            ;;
         *)
             return 1
             ;;
@@ -113,6 +123,8 @@ bundle_runtime_is_system_library_name() {
         libfontconfig.so.*|\
         libfreetype.so.*|\
         libharfbuzz.so.*|\
+        libpcre.so.*|\
+        libpcre2-8.so.*|\
         libglib-2.0.so.*|\
         libgio-2.0.so.*|\
         libgmodule-2.0.so.*|\
@@ -127,6 +139,11 @@ bundle_runtime_is_system_library_name() {
         libsystemd.so.*|\
         libudev.so.*|\
         libelogind.so.*|\
+        libmount.so.*|\
+        libblkid.so.*|\
+        libuuid.so.*|\
+        libselinux.so.*|\
+        libsepol.so.*|\
         libasound.so.*|\
         libpulse.so.*|\
         libpulse-simple.so.*|\
@@ -134,7 +151,6 @@ bundle_runtime_is_system_library_name() {
         libpulsecommon-*.so|\
         libpipewire-*.so.*|\
         libwireplumber-*.so.*|\
-        libjack.so.*|\
         libsmbclient.so.*|\
         libwbclient.so.*|\
         libsamba*.so.*|\

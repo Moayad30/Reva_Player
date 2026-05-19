@@ -244,15 +244,27 @@ revaplayer::infrastructure::mpv::MpvRenderHost *VideoViewport::renderHost() cons
 
 void VideoViewport::setRenderHostVisible(const bool visible)
 {
-    if (renderHost_ == nullptr || renderHost_->isVisible() == visible) {
+    if (renderHost_ == nullptr) {
         return;
     }
 
-    renderHost_->setVisible(visible);
+    renderHost_->setGeometry(rect());
+    if (renderHost_->isVisible() != visible) {
+        renderHost_->setVisible(visible);
+    }
     if (visible) {
+        renderHost_->raise();
         renderHost_->update();
     }
-    overlayLabel_->raise();
+    if (overlayLabel_ != nullptr) {
+        overlayLabel_->raise();
+    }
+    if (actionOverlayLabel_ != nullptr) {
+        actionOverlayLabel_->raise();
+    }
+    if (volumeOverlayWidget_ != nullptr) {
+        volumeOverlayWidget_->raise();
+    }
     updateOverlayGeometry();
 }
 

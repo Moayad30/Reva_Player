@@ -1165,6 +1165,21 @@ bool storedMediaSourceIsUsable(const QString &source)
     return url.isValid() && !url.scheme().isEmpty();
 }
 
+QModelIndexList playlistContextActionIndexes(const QListView *playlistView, const QModelIndex &contextIndex)
+{
+    if (playlistView == nullptr || !contextIndex.isValid()) {
+        return {};
+    }
+
+    const QItemSelectionModel *selectionModel = playlistView->selectionModel();
+    if (selectionModel == nullptr || !selectionModel->isSelected(contextIndex)) {
+        return QModelIndexList {contextIndex};
+    }
+
+    const QModelIndexList selectedRows = selectionModel->selectedRows();
+    return selectedRows.isEmpty() ? QModelIndexList {contextIndex} : selectedRows;
+}
+
 bool sourcesReferToSameMedia(const QString &leftSource, const QString &rightSource)
 {
     const QString left = leftSource;
@@ -3017,6 +3032,32 @@ QKeySequence portableShortcut(const char *portableText)
         : QKeySequence(QString::fromLatin1(portableText), QKeySequence::PortableText);
 }
 
+QKeySequence keySequenceForKeyEvent(const QKeyEvent *event)
+{
+    if (event == nullptr || event->key() == Qt::Key_unknown) {
+        return {};
+    }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return QKeySequence(event->keyCombination());
+#else
+    const int modifiers = static_cast<int>(
+        event->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier));
+    return QKeySequence(modifiers | event->key());
+#endif
+}
+
+bool isTextInputLikeWidget(const QWidget *widget)
+{
+    return widget != nullptr
+        && (widget->inherits("QLineEdit")
+            || widget->inherits("QPlainTextEdit")
+            || widget->inherits("QTextEdit")
+            || widget->inherits("QAbstractSpinBox")
+            || widget->inherits("QComboBox")
+            || widget->inherits("QKeySequenceEdit"));
+}
+
 bool isSupportedMediaFile(const QFileInfo &fileInfo)
 {
     static const QSet<QString> kExtensions {
@@ -3613,6 +3654,13 @@ QString customSettingValue(const revaplayer::application::SettingsController *se
     return settingsController != nullptr
         ? settingsController->customValue(QString::fromLatin1(key), defaultValue)
         : defaultValue;
+}
+
+double persistedPlaybackPosition(const double positionSeconds,
+                                 const double,
+                                 const bool)
+{
+    return std::max(0.0, positionSeconds);
 }
 
 bool customSettingFlag(const revaplayer::application::SettingsController *settingsController,
@@ -6291,7 +6339,14 @@ MainWindow::MainWindow(revaplayer::application::BookmarkController *bookmarkCont
 {
     setAttribute(Qt::WA_StyledBackground, true);
     setAcceptDrops(true);
+    const QIcon applicationIcon = QApplication::windowIcon();
+    if (!applicationIcon.isNull()) {
+        setWindowIcon(applicationIcon);
+    }
     installEventFilter(this);
+    if (qApp != nullptr) {
+        qApp->installEventFilter(this);
+    }
     resize(1440, 860);
     setMinimumSize(200, 120);
     applyLegacyWindowChromeMigration(settingsController_);
@@ -6487,6 +6542,14 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         return QMainWindow::eventFilter(watched, event);
     }
 
+    if (event->type() == QEvent::KeyPress) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (triggerConfiguredShortcut(keyEvent)) {
+            keyEvent->accept();
+            return true;
+        }
+    }
+
     if ((watched == playlistResizeHandle_ || watched == detailsResizeHandle_) && panelOverlayModeActive_) {
         const SidePanel resizedPanel = watched == detailsResizeHandle_ ? SidePanel::Details : SidePanel::Playlist;
         switch (event->type()) {
@@ -6627,15 +6690,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (event != nullptr
         && event->modifiers() == Qt::NoModifier
         && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
-        QWidget *focus = QApplication::focusWidget();
-        const bool textInputFocused = focus != nullptr
-            && (focus->inherits("QLineEdit")
-                || focus->inherits("QPlainTextEdit")
-                || focus->inherits("QTextEdit")
-                || focus->inherits("QAbstractSpinBox")
-                || focus->inherits("QComboBox")
-                || focus->inherits("QKeySequenceEdit"));
-        if (!textInputFocused) {
+        if (!isTextInputLikeWidget(QApplication::focusWidget())) {
             toggleFullscreen();
             event->accept();
             return;
@@ -7307,6 +7362,7 @@ void MainWindow::showPlaylistContextMenu(const QPoint &position)
     QAction *copyPathAction = nullptr;
     QAction *editDetailsAction = nullptr;
     QAction *resetProgressAction = nullptr;
+    QAction *markCompletedAction = nullptr;
     QAction *addToFavoritesAction = nullptr;
     QAction *removeSelectedAction = nullptr;
     QAction *keepOnlySelectedAction = nullptr;
@@ -7320,6 +7376,7 @@ void MainWindow::showPlaylistContextMenu(const QPoint &position)
         contextFavoriteTitle = index.data(revaplayer::application::PlaylistRoles::TitleRole).toString().trimmed();
         if (storedMediaSourceIsUsable(contextFavoriteSource)) {
             resetProgressAction = menu.addAction(uiText("Reset Progress"));
+            markCompletedAction = menu.addAction(uiText("Mark Watched Complete"));
             const bool alreadyFavorite = settingsController_ != nullptr
                 && !settingsController_->customValue(favoriteStorageKey(contextFavoriteSource)).trimmed().isEmpty();
             addToFavoritesAction = menu.addAction(alreadyFavorite
@@ -7408,6 +7465,11 @@ void MainWindow::showPlaylistContextMenu(const QPoint &position)
         return;
     }
 
+    if (chosenAction == markCompletedAction) {
+        markSelectedPlaylistItemCompleted(index);
+        return;
+    }
+
     if (chosenAction == addToFavoritesAction) {
         if (chosenAction->data().toBool()) {
             settingsController_->removeCustomValue(favoriteStorageKey(contextFavoriteSource));
@@ -7480,6 +7542,12 @@ void MainWindow::showPlaylistContextMenu(const QPoint &position)
 
 void MainWindow::onLoadStarted(const QString &displayTarget)
 {
+    if (homeDashboard_ != nullptr) {
+        homeDashboard_->hide();
+    }
+    if (videoViewport_ != nullptr) {
+        videoViewport_->setRenderHostVisible(true);
+    }
     enforceHiddenSidePanelsAfterMediaOpen(kPointerPanelSuppressionDelayMs * 2, true);
     beginLoadFeedback(displayTarget);
 }
@@ -7563,8 +7631,10 @@ bool MainWindow::clearStoredProgressForSource(const QString &source)
     }
     resumeStateLookupCompleted_.insert(normalizedSource);
 
-    if (sourcesReferToSameMedia(normalizedSource, currentMediaSource_)) {
+    const QString currentSource = currentMediaSource_.trimmed();
+    if (!currentSource.isEmpty() && sourcesReferToSameMedia(normalizedSource, currentSource)) {
         lastPersistedPositionSeconds_ = 0.0;
+        progressResetSuppressedSources_.insert(currentSource);
     }
 
     return true;
@@ -7660,19 +7730,157 @@ void MainWindow::resetSelectedPlaylistItemProgress(const QModelIndex &index)
         return;
     }
 
-    const QString source = index.data(revaplayer::application::PlaylistRoles::SourceRole).toString().trimmed();
-    if (source.isEmpty() || !storedMediaSourceIsUsable(source)) {
+    const QModelIndexList actionIndexes = playlistContextActionIndexes(playlistView_, index);
+    QStringList sources;
+    sources.reserve(actionIndexes.size());
+    for (const QModelIndex &actionIndex : actionIndexes) {
+        const QString source = actionIndex.data(revaplayer::application::PlaylistRoles::SourceRole).toString().trimmed();
+        if (!source.isEmpty() && storedMediaSourceIsUsable(source)) {
+            sources.push_back(source);
+        }
+    }
+
+    if (sources.isEmpty()) {
         statusBar()->showMessage(uiText("No playlist progress to reset"), 2500);
         return;
     }
 
-    if (clearStoredProgressForSources(QStringList {source}) <= 0) {
+    const int resetCount = clearStoredProgressForSources(sources);
+    if (resetCount <= 0) {
         statusBar()->showMessage(uiText("Could not reset progress"), 3500);
         return;
     }
 
     refreshProgressDisplaysAfterReset();
-    statusBar()->showMessage(uiText("Progress reset for selected item"), 2500);
+    statusBar()->showMessage(
+        resetCount == 1 ? uiText("Progress reset for selected item") : uiText("Progress reset for selected items"),
+        2500);
+}
+
+void MainWindow::markSelectedPlaylistItemCompleted(const QModelIndex &index)
+{
+    if (!index.isValid()) {
+        return;
+    }
+
+    const QModelIndexList actionIndexes = playlistContextActionIndexes(playlistView_, index);
+    if (actionIndexes.isEmpty()) {
+        statusBar()->showMessage(uiText("No playlist item to mark complete"), 2500);
+        return;
+    }
+
+    if (historyController_ == nullptr || !historyController_->isReady()) {
+        statusBar()->showMessage(uiText("History storage is unavailable"), 3000);
+        return;
+    }
+
+    if (!historyEnabled()) {
+        statusBar()->showMessage(uiText("History is disabled in Preferences"), 3000);
+        return;
+    }
+
+    int completedCount = 0;
+    QStringList completedSources;
+    completedSources.reserve(actionIndexes.size());
+    const QString nowIso = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+
+    for (const QModelIndex &actionIndex : actionIndexes) {
+        const QString source = actionIndex.data(revaplayer::application::PlaylistRoles::SourceRole).toString().trimmed();
+        if (source.isEmpty() || !storedMediaSourceIsUsable(source)) {
+            continue;
+        }
+
+        const bool duplicate = std::any_of(completedSources.cbegin(), completedSources.cend(), [&source](const QString &existing) {
+            return existing == source || sourcesReferToSameMedia(existing, source);
+        });
+        if (duplicate) {
+            continue;
+        }
+        completedSources.push_back(source);
+
+        double durationSeconds = std::max(
+            0.0,
+            actionIndex.data(revaplayer::application::PlaylistRoles::DurationSecondsRole).toDouble());
+        if (sourcesReferToSameMedia(source, currentMediaSource_) && currentDurationSeconds_ > durationSeconds) {
+            durationSeconds = currentDurationSeconds_;
+        }
+
+        const QString scanKey = mediaScanSourceKey(source);
+        if (durationSeconds <= 0.0 && !scanKey.isEmpty()) {
+            const auto scanIt = mediaScanCache_.constFind(scanKey);
+            if (scanIt != mediaScanCache_.constEnd() && scanIt->durationSeconds > 0.0) {
+                durationSeconds = scanIt->durationSeconds;
+            }
+        }
+
+        const QString title = displayTitleForHistory(
+            source,
+            actionIndex.data(revaplayer::application::PlaylistRoles::TitleRole).toString());
+        historyController_->markPlaybackCompleted(source, title, durationSeconds, true, resumeEnabled());
+
+        QStringList historyCacheKeys;
+        for (auto it = historyEntriesBySource_.cbegin(); it != historyEntriesBySource_.cend(); ++it) {
+            if (it.key() == source || sourcesReferToSameMedia(it.key(), source)) {
+                historyCacheKeys.push_back(it.key());
+            }
+        }
+        for (const QString &key : std::as_const(historyCacheKeys)) {
+            historyEntriesBySource_.remove(key);
+        }
+        historyEntriesBySource_.insert(
+            source,
+            revaplayer::infrastructure::storage::PlaybackHistoryRecord {
+                source,
+                title,
+                durationSeconds,
+                durationSeconds,
+                true,
+                nowIso,
+                nowIso,
+            });
+
+        QStringList resumeCacheKeys;
+        for (auto it = resumeStateCache_.cbegin(); it != resumeStateCache_.cend(); ++it) {
+            if (it.key() == source || sourcesReferToSameMedia(it.key(), source)) {
+                resumeCacheKeys.push_back(it.key());
+            }
+        }
+        for (const QString &key : std::as_const(resumeCacheKeys)) {
+            resumeStateCache_.remove(key);
+        }
+        resumeStateLookupCompleted_.insert(source);
+        progressResetSuppressedSources_.remove(source);
+        if (sourcesReferToSameMedia(source, currentMediaSource_)) {
+            progressResetSuppressedSources_.remove(currentMediaSource_);
+            lastPersistedPositionSeconds_ = durationSeconds;
+        }
+
+        if (durationSeconds <= 0.0
+            && metadataScanService_ != nullptr
+            && !scanKey.isEmpty()
+            && !localMediaPathForSource(source).isEmpty()
+            && !pendingMediaScanSources_.contains(scanKey)
+            && !failedMediaScanSources_.contains(scanKey)) {
+            pendingMediaScanSources_.insert(scanKey);
+            metadataScanService_->enqueueSource(scanKey);
+        }
+
+        ++completedCount;
+    }
+
+    if (completedCount <= 0) {
+        statusBar()->showMessage(uiText("No playlist item to mark complete"), 2500);
+        return;
+    }
+
+    updatePlaylistMetadataScanButtonState();
+    trimHistoryToLimit();
+    refreshProgressDisplaysAfterReset();
+    statusBar()->showMessage(
+        completedCount == 1
+            ? uiText("Selected item marked as watched complete")
+            : uiText("Selected items marked as watched complete"),
+        2500);
 }
 
 void MainWindow::resetCurrentPlaylistProgress()
@@ -8345,9 +8553,18 @@ void MainWindow::restorePendingPlaylistOrderIfReady()
 void MainWindow::onIdleChanged(const bool idleActive)
 {
     if (!idleActive) {
+        ++idleStateGeneration_;
         errorStateActive_ = false;
+        if (loadingMedia_ && !mediaLoaded_) {
+            QTimer::singleShot(120, this, [this]() {
+                finalizeActiveMediaLoadFromBackend();
+            });
+        }
         if (homeDashboard_ != nullptr) {
             homeDashboard_->hide();
+        }
+        if (videoViewport_ != nullptr) {
+            videoViewport_->setRenderHostVisible(true);
         }
         updateControlBarBufferedState();
         updateActionStates();
@@ -8355,6 +8572,31 @@ void MainWindow::onIdleChanged(const bool idleActive)
         updateDisplaySleepInhibition();
         return;
     }
+
+    const int idleGeneration = ++idleStateGeneration_;
+    if (loadingMedia_
+        || (mediaLoaded_ && !stopRequested_ && !endOfFilePending_ && !errorStateActive_)) {
+        QTimer::singleShot(180, this, [this, idleGeneration]() {
+            if (idleGeneration != idleStateGeneration_
+                || loadingMedia_
+                || (mediaLoaded_ && !stopRequested_ && !endOfFilePending_ && !errorStateActive_)) {
+                return;
+            }
+            applyIdleStateReset();
+        });
+        return;
+    }
+
+    applyIdleStateReset();
+}
+
+void MainWindow::applyIdleStateReset()
+{
+    if (loadingMedia_) {
+        return;
+    }
+
+    ++idleStateGeneration_;
 
     playlistCount_ = 0;
     currentPlaylistIndex_ = -1;
@@ -8421,10 +8663,6 @@ void MainWindow::onIdleChanged(const bool idleActive)
     refreshPlaylistPresentationData();
     rebuildPinnedCourseTabs();
     reloadHomeDashboard();
-
-    if (loadingMedia_) {
-        return;
-    }
 
     clearPendingPlaylistSelection();
     pendingPlaylistNaturalOrderSources_.clear();
@@ -8559,6 +8797,14 @@ void MainWindow::onPlaybackPositionChanged(const double positionSeconds, const d
     const double previousDurationSeconds = currentDurationSeconds_;
     currentPositionSeconds_ = positionSeconds;
     currentDurationSeconds_ = durationSeconds;
+    const bool loadingSourceConfirmed = !currentMediaSource_.trimmed().isEmpty()
+        && (loadingMediaSource_.trimmed().isEmpty()
+            || sourcesReferToSameMedia(currentMediaSource_, loadingMediaSource_));
+    if (!mediaLoaded_
+        && loadingMedia_
+        && (loadingSourceConfirmed || positionSeconds > 0.0 || durationSeconds > 0.0)) {
+        finalizeActiveMediaLoadFromBackend();
+    }
     const bool durationBecameKnown = previousDurationSeconds <= 0.0 && currentDurationSeconds_ > 0.0;
     const bool durationChanged = std::abs(previousDurationSeconds - currentDurationSeconds_) >= 0.05;
     const bool canRefreshVisibleUi = isVisible() && !isMinimized();
@@ -8591,25 +8837,16 @@ void MainWindow::onPlaybackPositionChanged(const double positionSeconds, const d
         playlistPlaybackRefreshElapsed_.restart();
     }
 
-    if (historyController_ == nullptr || !historyController_->isReady() || !mediaLoaded_ || currentMediaSource_.isEmpty()) {
-        return;
-    }
-
-    if (positionSeconds < 5.0) {
-        return;
-    }
-
-    if (lastPersistedPositionSeconds_ >= 0.0
-        && std::abs(positionSeconds - lastPersistedPositionSeconds_) < progressSaveDeltaSeconds_) {
-        return;
-    }
-
-    persistPlaybackProgress(false);
+    // Persistence is intentionally action-driven (pause, seek, stop, close,
+    // media switch). Position updates can arrive many times per second.
 }
 
 void MainWindow::onPausedChanged(const bool paused)
 {
     playbackPaused_ = paused;
+    if (!paused && loadingMedia_ && !mediaLoaded_) {
+        finalizeActiveMediaLoadFromBackend();
+    }
     controlBar_->setPaused(paused);
     updateMediaInformationOverlay();
     updateDisplaySleepInhibition();
@@ -8659,11 +8896,24 @@ void MainWindow::onTitleChanged(const QString &title)
 
 void MainWindow::onFileLoaded()
 {
+    ++idleStateGeneration_;
+    if (mediaLoaded_ && !loadingMedia_) {
+        updateActionStates();
+        updateControlBarBufferedState();
+        return;
+    }
+
     loadingMedia_ = false;
     mediaLoaded_ = true;
     stopRequested_ = false;
     endOfFilePending_ = false;
     errorStateActive_ = false;
+    if (homeDashboard_ != nullptr) {
+        homeDashboard_->hide();
+    }
+    if (videoViewport_ != nullptr) {
+        videoViewport_->setRenderHostVisible(true);
+    }
     updateActionStates();
     videoViewport_->setOverlayVisible(false);
     updateControlBarBufferedState();
@@ -8672,7 +8922,8 @@ void MainWindow::onFileLoaded()
     if (sourceConfirmed
         && historyController_ != nullptr
         && historyController_->isReady()
-        && !currentMediaSource_.isEmpty()) {
+        && !currentMediaSource_.isEmpty()
+        && !progressResetSuppressedSources_.contains(currentMediaSource_.trimmed())) {
         historyController_->recordMediaOpened(
             currentMediaSource_,
             effectiveCurrentMediaTitle(),
@@ -8852,6 +9103,10 @@ void MainWindow::onPlaylistChanged(const QVector<revaplayer::domain::PlaylistEnt
     currentPlaylistIndex_ = displayCurrentIndex;
     clearPlaylistThumbnailQueue(true);
     if (!sourcesReferToSameMedia(newSource, currentMediaSource_)) {
+        const QString previousSource = currentMediaSource_.trimmed();
+        if (!previousSource.isEmpty()) {
+            progressResetSuppressedSources_.remove(previousSource);
+        }
         currentMediaSource_ = newSource;
         favoriteCurrentMedia_ = settingsController_ != nullptr
             && settingsController_->customValue(favoriteStorageKey(currentMediaSource_)).trimmed().size() > 0;
@@ -8876,6 +9131,20 @@ void MainWindow::onPlaylistChanged(const QVector<revaplayer::domain::PlaylistEnt
         }
         reloadBookmarks();
         clearSceneBrowser(QStringLiteral("Preparing scene browser"));
+    }
+    if (!mediaLoaded_
+        && loadingMedia_
+        && !currentMediaSource_.trimmed().isEmpty()
+        && (loadingMediaSource_.trimmed().isEmpty()
+            || sourcesReferToSameMedia(currentMediaSource_, loadingMediaSource_))) {
+        const QString sourceAtSignal = currentMediaSource_.trimmed();
+        QTimer::singleShot(0, this, [this, sourceAtSignal]() {
+            if (!mediaLoaded_
+                && loadingMedia_
+                && sourcesReferToSameMedia(currentMediaSource_, sourceAtSignal)) {
+                finalizeActiveMediaLoadFromBackend();
+            }
+        });
     }
     if (mediaLoaded_
         && !loadingMedia_
@@ -8945,6 +9214,9 @@ void MainWindow::onTracksChanged(const QVector<revaplayer::domain::TrackInfo> &t
         [](const revaplayer::domain::TrackInfo &track) {
             return track.type == revaplayer::domain::TrackType::Video;
         });
+    if (!tracks.isEmpty()) {
+        finalizeActiveMediaLoadFromBackend();
+    }
     rebuildVideoQualityMenu(tracks);
     rebuildControlBarSubtitleMenu(tracks);
     populateTracks(tracks);
@@ -11247,7 +11519,7 @@ void MainWindow::connectUi()
             0.0,
             std::max(0.0, currentDurationSeconds_));
         currentPositionSeconds_ = targetPosition;
-        persistPlaybackProgress(false);
+        persistPlaybackProgress(false, true);
         if (comparePlaybackController_ != nullptr && compareSourceLoaded_) {
             comparePlaybackController_->seekToSeconds(targetPosition);
         }
@@ -11330,6 +11602,7 @@ void MainWindow::connectUi()
             if (pinnedCourseList) {
                 const QStringList sources = supportedMediaFilesInDirectory(QDir(payload), naturalSortFolderPlaylistEnabled());
                 if (!sources.isEmpty()) {
+                    beginLoadFeedback(displayTitleForHistory(sources.first(), QString {}));
                     openPlaylistSources(sources, 0);
                 }
                 return;
@@ -12005,6 +12278,49 @@ void MainWindow::applyShortcutPreferences()
             action->setShortcut(QKeySequence {});
         }
     }
+}
+
+bool MainWindow::triggerConfiguredShortcut(const QKeyEvent *event)
+{
+    if (event == nullptr
+        || QApplication::activePopupWidget() != nullptr
+        || QApplication::activeModalWidget() != nullptr
+        || isTextInputLikeWidget(QApplication::focusWidget())) {
+        return false;
+    }
+
+    QWidget *activeWindow = QApplication::activeWindow();
+    if (activeWindow != nullptr && activeWindow != this) {
+        return false;
+    }
+
+    const QKeySequence pressedSequence = keySequenceForKeyEvent(event);
+    if (pressedSequence.isEmpty()) {
+        return false;
+    }
+
+    QSet<QAction *> inspectedActions;
+    for (const auto &definition : kShortcutDefinitions) {
+        QAction *action = actionForShortcutId(QString::fromLatin1(definition.id));
+        if (action == nullptr || inspectedActions.contains(action) || !action->isEnabled()) {
+            continue;
+        }
+        inspectedActions.insert(action);
+
+        if (event->isAutoRepeat() && !action->autoRepeat()) {
+            continue;
+        }
+
+        const QList<QKeySequence> shortcuts = action->shortcuts();
+        for (const QKeySequence &shortcut : shortcuts) {
+            if (!shortcut.isEmpty() && pressedSequence.matches(shortcut) == QKeySequence::ExactMatch) {
+                action->trigger();
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void MainWindow::applyControlBarPreferences()
@@ -12963,6 +13279,7 @@ void MainWindow::warmPlaylistThumbnail(const QString &source, const double durat
 
 void MainWindow::beginLoadFeedback(const QString &displayTarget)
 {
+    ++idleStateGeneration_;
     persistPlaybackProgress(false, true);
     resetVideoZoomAndPan(false);
     if (previewRequestTimer_ != nullptr) {
@@ -12996,6 +13313,23 @@ void MainWindow::beginLoadFeedback(const QString &displayTarget)
     statusBar()->showMessage(uiText("Loading %1").arg(label), 3000);
 }
 
+void MainWindow::finalizeActiveMediaLoadFromBackend()
+{
+    if (!loadingMedia_ || mediaLoaded_ || errorStateActive_) {
+        return;
+    }
+
+    if (currentMediaSource_.trimmed().isEmpty()) {
+        const QString fallbackSource = loadingMediaSource_.trimmed();
+        if (fallbackSource.isEmpty()) {
+            return;
+        }
+        currentMediaSource_ = fallbackSource;
+    }
+
+    onFileLoaded();
+}
+
 void MainWindow::persistPlaybackProgress(const bool completed, const bool force)
 {
     if (historyController_ == nullptr || !historyController_->isReady() || currentMediaSource_.trimmed().isEmpty()) {
@@ -13003,6 +13337,10 @@ void MainWindow::persistPlaybackProgress(const bool completed, const bool force)
     }
 
     const QString source = currentMediaSource_.trimmed();
+    if (!completed && progressResetSuppressedSources_.contains(source)) {
+        return;
+    }
+
     const QString title = source == currentMediaSource_ ? effectiveCurrentMediaTitle() : displayTitleForHistory(source, currentTitle_);
     const double safeDuration = std::max(0.0, currentDurationSeconds_);
     const bool keepHistory = historyEnabled();
@@ -13033,7 +13371,7 @@ void MainWindow::persistPlaybackProgress(const bool completed, const bool force)
         return;
     }
 
-    const double safePosition = std::max(0.0, currentPositionSeconds_);
+    const double safePosition = persistedPlaybackPosition(currentPositionSeconds_, safeDuration, force);
     if (!force && safePosition < 5.0) {
         return;
     }
@@ -18611,7 +18949,7 @@ void MainWindow::seekBySecondsWithFeedback(const int seconds)
         0.0,
         std::max(0.0, currentDurationSeconds_));
     currentPositionSeconds_ = targetPosition;
-    persistPlaybackProgress(false);
+    persistPlaybackProgress(false, true);
     if (comparePlaybackController_ != nullptr && compareSourceLoaded_) {
         comparePlaybackController_->seekToSeconds(targetPosition);
     }
@@ -20521,7 +20859,15 @@ void MainWindow::refreshPlaylistPresentationData()
         data.notesPreview = metadata.notes.left(140);
         data.difficulty = metadata.difficulty;
 
-        const auto historyIt = historyEntriesBySource_.constFind(source);
+        auto historyIt = historyEntriesBySource_.constFind(source);
+        if (historyIt == historyEntriesBySource_.constEnd()) {
+            for (auto candidate = historyEntriesBySource_.cbegin(); candidate != historyEntriesBySource_.cend(); ++candidate) {
+                if (sourcesReferToSameMedia(candidate.key(), source)) {
+                    historyIt = candidate;
+                    break;
+                }
+            }
+        }
         if (historyIt != historyEntriesBySource_.constEnd()) {
             const auto &historyEntry = historyIt.value();
             data.durationSeconds = historyEntry.durationSeconds;
@@ -20570,7 +20916,9 @@ void MainWindow::refreshPlaylistPresentationData()
             }
             if (currentPositionSeconds_ > 0.0) {
                 data.lastPositionSeconds = currentPositionSeconds_;
-                if (data.durationSeconds > 0.0) {
+                if (data.completed) {
+                    data.watchedPercent = 100;
+                } else if (data.durationSeconds > 0.0) {
                     data.watchedPercent = std::clamp(
                         static_cast<int>(std::round((currentPositionSeconds_ / data.durationSeconds) * 100.0)),
                         0,

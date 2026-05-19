@@ -387,7 +387,7 @@ if [ -z "${QT_QPA_PLATFORM:-}" ]; then
     fi
 fi
 
-exec "${APP_ROOT}/bin/RevaPlayer.bin" "$@"
+exec -a "RevaPlayer" "${APP_ROOT}/bin/RevaPlayer.bin" -name "RevaPlayer" "$@"
 EOF
 
     chmod +x "${wrapper_path}"
@@ -420,7 +420,7 @@ Priority: optional
 Architecture: ${architecture}
 Maintainer: Reva Player <maintainers@revaplayer.local>
 Installed-Size: ${installed_size}
-Depends: bash, libc6, libstdc++6, libgcc-s1, zlib1g,
+Depends: bash, mpv, ffmpeg, hicolor-icon-theme, libc6, libstdc++6, libgcc-s1, zlib1g,
  libgl1, libglx0, libopengl0, libegl1, libglvnd0,
  libx11-6, libx11-xcb1, libxau6, libxext6, libxfixes3, libxi6,
  libxrandr2, libxrender1, libxss1, libxcb1, libxcb-cursor0,
@@ -460,6 +460,8 @@ normalize_package_permissions() {
                "${package_root}/usr/share/applications/${DESKTOP_ID}" \
                "${package_root}/usr/share/metainfo/${APP_ID}.metainfo.xml" \
                "${package_root}/usr/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg" \
+               "${package_root}/usr/share/icons/hicolor/32x32/apps/${ICON_NAME}.xpm" \
+               "${package_root}/usr/share/pixmaps/${ICON_NAME}.xpm" \
                "${package_root}/usr/share/doc/revaplayer/README.md" \
                "${package_root}/usr/share/doc/revaplayer/LICENSE" \
                "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"
@@ -586,6 +588,8 @@ mkdir -p "${output_dir}" \
          "${package_root}/usr/share/applications" \
          "${package_root}/usr/share/metainfo" \
          "${package_root}/usr/share/icons/hicolor/scalable/apps" \
+         "${package_root}/usr/share/icons/hicolor/32x32/apps" \
+         "${package_root}/usr/share/pixmaps" \
          "${package_root}/usr/share/doc/revaplayer"
 
 cmake --build "${build_dir}" --parallel
@@ -600,7 +604,8 @@ copy_directory_contents "${bundle_source}/plugins" "${bundle_root}/plugins"
 copy_directory_contents "${bundle_source}/translations" "${bundle_root}/translations"
 copy_directory_contents "${install_root}/share/revaplayer" "${bundle_root}/share/revaplayer"
 
-[ -f "${bundle_root}/lib/libmpv.so.2" ] || die "bundled libmpv missing from ${bundle_root}/lib"
+mpv_libraries=("${bundle_root}"/lib/libmpv.so*)
+[ -e "${mpv_libraries[0]}" ] || die "bundled libmpv missing from ${bundle_root}/lib"
 [ -f "${bundle_root}/plugins/platforms/libqxcb.so" ] || die "bundled Qt xcb platform plugin missing"
 [ -f "${bundle_root}/plugins/sqldrivers/libqsqlite.so" ] || die "bundled Qt SQLite plugin missing"
 
@@ -632,6 +637,10 @@ cp -f "${install_root}/share/metainfo/${APP_ID}.metainfo.xml" \
     "${package_root}/usr/share/metainfo/${APP_ID}.metainfo.xml"
 cp -f "${install_root}/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg" \
     "${package_root}/usr/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg"
+cp -f "${PROJECT_ROOT}/resources/icons/${ICON_NAME}.xpm" \
+    "${package_root}/usr/share/icons/hicolor/32x32/apps/${ICON_NAME}.xpm"
+cp -f "${PROJECT_ROOT}/resources/icons/${ICON_NAME}.xpm" \
+    "${package_root}/usr/share/pixmaps/${ICON_NAME}.xpm"
 cp -f "${PROJECT_ROOT}/README.md" "${package_root}/usr/share/doc/revaplayer/README.md"
 cp -f "${PROJECT_ROOT}/LICENSE" "${package_root}/usr/share/doc/revaplayer/LICENSE"
 cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"

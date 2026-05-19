@@ -13,5 +13,5 @@ StartupWMClass=RevaPlayer
 Categories=AudioVideo;Player;Video;Audio;
 MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/ogg;audio/mpeg;audio/flac;audio/x-wav;audio/ogg;application/x-mpegURL;application/vnd.apple.mpegurl;
 Keywords=video;audio;player;playlist;subtitles;mpv;study;
-SingleMainWindow=true
+X-SingleMainWindow=true
 X-GNOME-UsesNotifications=true

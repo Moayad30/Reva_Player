@@ -298,7 +298,7 @@ if [ -z "\${QT_QPA_PLATFORMTHEME:-}" ]; then
     esac
 fi
 
-exec "\${APPDIR}/usr/bin/${real_binary_name}" "\$@"
+exec -a "${APP_BINARY_NAME}" "\${APPDIR}/usr/bin/${real_binary_name}" -name "${APP_BINARY_NAME}" "\$@"
 EOF
 
     chmod +x "${wrapper_path}"
@@ -410,6 +410,20 @@ copy_optional_qt_runtime_libraries() {
                 cp -f "${detected_path}" "${destination_root}/"
             fi
         done
+    fi
+}
+
+copy_optional_mpv_thumbnailer() {
+    local destination_path="${appdir}/usr/bin/mpv"
+    local source_path="${REVAPLAYER_MPV:-}"
+
+    if [ -z "${source_path}" ]; then
+        source_path="$(command -v mpv 2>/dev/null || true)"
+    fi
+
+    if [ -n "${source_path}" ] && [ -x "${source_path}" ]; then
+        cp -f "${source_path}" "${destination_path}"
+        chmod 0755 "${destination_path}"
     fi
 }
 
@@ -527,6 +541,14 @@ should_keep_runtime_library() {
         librubberband.so.*|\
         libsqlite3.so.*|\
         libuchardet.so.*|\
+        libxcb-xinput.so.*|\
+        libva.so.*|\
+        libva-drm.so.*|\
+        libva-wayland.so.*|\
+        libva-x11.so.*|\
+        libvdpau.so.*|\
+        libOpenCL.so.*|\
+        libmfx.so.*|\
         libzimg.so.*)
             return 0
             ;;
@@ -551,8 +573,13 @@ prune_runtime_libraries() {
 }
 
 prune_appdir_payload() {
-    rm -rf "${appdir}/usr/share/doc" \
-           "${appdir}/usr/share/man" \
+    if [ -d "${appdir}/usr/share/doc" ]; then
+        find "${appdir}/usr/share/doc" -mindepth 1 -maxdepth 1 \
+            ! -name revaplayer \
+            -exec rm -rf {} +
+    fi
+
+    rm -rf "${appdir}/usr/share/man" \
            "${appdir}/usr/share/gtk-doc" \
            "${appdir}/usr/share/info"
 
@@ -736,7 +763,8 @@ printf 'X-AppImage-Arch=%s\n' "${appimage_arch}" >>"${installed_desktop_path}"
 
 maybe_validate_desktop_assets "${installed_desktop_path}" "${installed_metainfo_path}"
 
-appimagetool_args=(--no-appstream --comp zstd)
+appimage_compression="${REVAPLAYER_APPIMAGE_COMP:-xz}"
+appimagetool_args=(--no-appstream --comp "${appimage_compression}")
 if [ -n "${runtime_file}" ]; then
     [ -f "${runtime_file}" ] || die "runtime file not found: ${runtime_file}"
     appimagetool_args+=(--runtime-file "${runtime_file}")
@@ -767,6 +795,7 @@ if [ -n "${qt_plugins_dir}" ]; then
 fi
 copy_supported_qt_translations "${qt_translations_dir}"
 copy_optional_qt_runtime_libraries
+copy_optional_mpv_thumbnailer
 write_qt_conf "${appdir}/usr/bin/qt.conf"
 
 restore_system_runtime_payload

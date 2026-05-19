@@ -405,7 +405,7 @@ if [ -z "${QT_QPA_PLATFORM:-}" ]; then
     fi
 fi
 
-exec "${APP_ROOT}/bin/RevaPlayer.bin" "$@"
+exec -a "RevaPlayer" "${APP_ROOT}/bin/RevaPlayer.bin" -name "RevaPlayer" "$@"
 EOF
 
     chmod +x "${wrapper_path}"
@@ -440,6 +440,8 @@ normalize_package_permissions() {
                "${package_root}/usr/share/applications/${DESKTOP_ID}" \
                "${package_root}/usr/share/metainfo/${APP_ID}.metainfo.xml" \
                "${package_root}/usr/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg" \
+               "${package_root}/usr/share/icons/hicolor/32x32/apps/${ICON_NAME}.xpm" \
+               "${package_root}/usr/share/pixmaps/${ICON_NAME}.xpm" \
                "${package_root}/usr/share/doc/revaplayer/README.md" \
                "${package_root}/usr/share/doc/revaplayer/LICENSE" \
                "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"
@@ -455,10 +457,13 @@ Name:           ${PACKAGE_NAME}
 Version:        ${version}
 Release:        ${PACKAGE_RELEASE}
 Summary:        Reva Player bundled offline RPM package
-License:        GPL-2.0-or-later
+License:        GPL-3.0-or-later
 URL:            https://github.com/moayad30/Reva_Player
 AutoReqProv:    no
 Requires:       bash
+Requires:       mpv
+Requires:       ffmpeg
+Requires:       hicolor-icon-theme
 Requires:       libc.so.6()(64bit)
 Requires:       libstdc++.so.6()(64bit)
 Requires:       libgcc_s.so.1()(64bit)
@@ -558,6 +563,8 @@ ${PACKAGE_INSTALL_ROOT}
 /usr/share/applications/${DESKTOP_ID}
 /usr/share/metainfo/${APP_ID}.metainfo.xml
 /usr/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg
+/usr/share/icons/hicolor/32x32/apps/${ICON_NAME}.xpm
+/usr/share/pixmaps/${ICON_NAME}.xpm
 /usr/share/doc/revaplayer/README.md
 /usr/share/doc/revaplayer/LICENSE
 /usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md
@@ -656,6 +663,8 @@ mkdir -p "${output_dir}" \
          "${package_root}/usr/share/applications" \
          "${package_root}/usr/share/metainfo" \
          "${package_root}/usr/share/icons/hicolor/scalable/apps" \
+         "${package_root}/usr/share/icons/hicolor/32x32/apps" \
+         "${package_root}/usr/share/pixmaps" \
          "${package_root}/usr/share/doc/revaplayer" \
          "${rpmbuild_root}/BUILD" \
          "${rpmbuild_root}/BUILDROOT" \
@@ -711,6 +720,10 @@ cp -f "${install_root}/share/metainfo/${APP_ID}.metainfo.xml" \
     "${package_root}/usr/share/metainfo/${APP_ID}.metainfo.xml"
 cp -f "${install_root}/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg" \
     "${package_root}/usr/share/icons/hicolor/scalable/apps/${ICON_NAME}.svg"
+cp -f "${PROJECT_ROOT}/resources/icons/${ICON_NAME}.xpm" \
+    "${package_root}/usr/share/icons/hicolor/32x32/apps/${ICON_NAME}.xpm"
+cp -f "${PROJECT_ROOT}/resources/icons/${ICON_NAME}.xpm" \
+    "${package_root}/usr/share/pixmaps/${ICON_NAME}.xpm"
 cp -f "${PROJECT_ROOT}/README.md" "${package_root}/usr/share/doc/revaplayer/README.md"
 cp -f "${PROJECT_ROOT}/LICENSE" "${package_root}/usr/share/doc/revaplayer/LICENSE"
 cp -f "${PROJECT_ROOT}/THIRD_PARTY_NOTICES.md" "${package_root}/usr/share/doc/revaplayer/THIRD_PARTY_NOTICES.md"

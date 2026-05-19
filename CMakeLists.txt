@@ -229,6 +229,16 @@ install(FILES
 )
 
 install(FILES
+    resources/icons/revaplayer.xpm
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/32x32/apps
+)
+
+install(FILES
+    resources/icons/revaplayer.xpm
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pixmaps
+)
+
+install(FILES
     README.md
     LICENSE
     THIRD_PARTY_NOTICES.md
@@ -262,9 +272,9 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "kdialog | zenity")
 
 if (QT_VERSION_MAJOR EQUAL 6)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite, qt6-wayland")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite, qt6-wayland, mpv, ffmpeg, hicolor-icon-theme")
 else()
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt5sql5-sqlite, qtwayland5")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt5sql5-sqlite, qtwayland5, mpv, ffmpeg, hicolor-icon-theme")
 endif()
 
 include(CPack)

@@ -4,7 +4,7 @@
   <name>Reva Player</name>
   <summary>Qt and libmpv based desktop media player for local playback</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-2.0-or-later</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.moayad30">
     <name>Moayad</name>
   </developer>
@@ -28,6 +28,6 @@
   <content_rating type="oars-1.1"/>
   <url type="homepage">https://github.com/moayad30/Reva_Player</url>
   <releases>
-    <release version="1.0.0" date="2026-05-10"/>
+    <release version="1.0.0" date="2026-05-17"/>
   </releases>
 </component>

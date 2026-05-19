@@ -56,9 +56,11 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral("1.0.0"));
     QApplication::setOrganizationName(QStringLiteral("RevaPlayer"));
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.moayad30.revaplayer"));
-    QApplication::setWindowIcon(QIcon::fromTheme(
-        QStringLiteral("revaplayer"),
-        QIcon(QStringLiteral(":/icons/revaplayer.xpm"))));
+    const QIcon bundledIcon(QStringLiteral(":/icons/revaplayer.svg"));
+    const QIcon appIcon = QIcon::hasThemeIcon(QStringLiteral("revaplayer"))
+        ? QIcon::fromTheme(QStringLiteral("revaplayer"), bundledIcon)
+        : bundledIcon;
+    QApplication::setWindowIcon(appIcon);
 
     revaplayer::app::AppBootstrap bootstrap;
     return bootstrap.run(application, application.arguments());

@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file>icons/revaplayer.svg</file>
         <file>icons/revaplayer.xpm</file>
         <file>themes/base.qss</file>
         <file>themes/dark.qss</file>

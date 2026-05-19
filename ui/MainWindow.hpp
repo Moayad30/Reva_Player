@@ -134,6 +134,7 @@ private slots:
     void showPlaylistContextMenu(const QPoint &position);
     void onLoadStarted(const QString &displayTarget);
     void onIdleChanged(bool idleActive);
+    void applyIdleStateReset();
     void onPlaylistActivated(const QModelIndex &index);
     void onChapterActivated(QListWidgetItem *item);
     void onTrackActivated(QTreeWidgetItem *item, int column);
@@ -169,6 +170,7 @@ private:
     void applyUiPreferences();
     void updateStatusBarVisibility();
     void applyShortcutPreferences();
+    [[nodiscard]] bool triggerConfiguredShortcut(const QKeyEvent *event);
     void applyPlaybackProfile(bool announce = false);
     void applyRuntimePreferences();
     void updateVideoPointerAutoHide();
@@ -189,6 +191,7 @@ private:
     void requestPendingThumbnailPreview();
     [[nodiscard]] bool ensureBookmarkStorageReady(bool announceFailure = false);
     void beginLoadFeedback(const QString &displayTarget);
+    void finalizeActiveMediaLoadFromBackend();
     void persistPlaybackProgress(bool completed, bool force = false);
     void maybeResumePlayback();
     [[nodiscard]] bool clearStoredProgressForSource(const QString &source);
@@ -196,6 +199,7 @@ private:
     [[nodiscard]] QStringList currentPlaylistProgressSources() const;
     void refreshProgressDisplaysAfterReset();
     void resetSelectedPlaylistItemProgress(const QModelIndex &index);
+    void markSelectedPlaylistItemCompleted(const QModelIndex &index);
     void resetCurrentPlaylistProgress();
     void showIdleOverlay(const QString &message);
     void updatePanelPresentationMode();
@@ -820,6 +824,7 @@ private:
     revaplayer::domain::PlaybackDiagnostics currentDiagnostics_;
     QHash<QString, revaplayer::services::media::MediaScanResult> mediaScanCache_;
     QSet<QString> mediaScanCacheLookupCompleted_;
+    QSet<QString> progressResetSuppressedSources_;
     QHash<QString, QImage> playlistThumbnailCache_;
     QHash<QString, qint64> playlistThumbnailPendingBuckets_;
     QHash<QString, double> playlistThumbnailQueuedDurations_;
@@ -877,6 +882,7 @@ private:
     bool stopRequested_ {false};
     bool endOfFilePending_ {false};
     bool errorStateActive_ {false};
+    int idleStateGeneration_ {0};
     bool resumeAttemptedForCurrentMedia_ {false};
     bool applyFullscreenOnShow_ {false};
     bool applyMaximizedOnShow_ {false};

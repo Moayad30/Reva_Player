@@ -14,7 +14,7 @@ workspace around playback: playlists, saved folders, resume history, bookmarks,
 subtitles, screenshots, thumbnails, and per-user settings.
 
 Reva Player is free software licensed under the GNU General Public License,
-version 2 or later (`GPL-2.0-or-later`). See [LICENSE](LICENSE).
+version 3 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
 
 Repository: [github.com/Moayad30/Reva_Player](https://github.com/Moayad30/Reva_Player)
 
@@ -171,7 +171,7 @@ testing, and practical improvements are welcome.
 
 ## License
 
-Reva Player is licensed under `GPL-2.0-or-later`.
+Reva Player is licensed under `GPL-3.0-or-later`.
 
 Binary release packages may include or depend on third-party runtime components
 such as Qt, libmpv, FFmpeg, SQLite, D-Bus, and desktop integration libraries.
