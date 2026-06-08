@@ -28,44 +28,44 @@ is real interest in continued development. 🌱🌱
 <table align="center">
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/main-window.png" alt="Reva Player main playback window interface" width="100%">
+      <img src="docs/screenshots/main-window.jpg" alt="Reva Player main playback window interface" width="100%">
       <br><sub>Main Playback Window</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/playlist-workflow.png" alt="Reva Player playlist and folder workflow view" width="100%">
+      <img src="docs/screenshots/playlist-workflow.jpg" alt="Reva Player playlist and folder workflow view" width="100%">
       <br><sub>Playlist Workflow</sub>
     </td>
   </tr>
   
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/bookmarks-history.png" alt="Reva Player bookmarks and history workflow interface" width="100%">
+      <img src="docs/screenshots/bookmarks-history.jpg" alt="Reva Player bookmarks and history workflow interface" width="100%">
       <br><sub>Bookmarks & History Workflow</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/playlist-workflow-folders.png" alt="Reva Player playlist folders manager view" width="100%">
+      <img src="docs/screenshots/playlist-workflow-folders.jpg" alt="Reva Player playlist folders manager view" width="100%">
       <br><sub>Playlist Workflow</sub>
     </td>
   </tr>
 
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/playlist-workflow-graphite.png" alt="Reva Player UI in Gray Theme with Graphite accent color" width="100%">
+      <img src="docs/screenshots/playlist-workflow-graphite.jpg" alt="Reva Player UI in Gray Theme with Graphite accent color" width="100%">
       <br><sub>Gray Theme (Graphite Accent)</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/playlist-workflow-orange.png" alt="Reva Player UI in Gray Theme with Orange accent color" width="100%">
+      <img src="docs/screenshots/playlist-workflow-orange.jpg" alt="Reva Player UI in Gray Theme with Orange accent color" width="100%">
       <br><sub>Gray Theme (Orange Accent)</sub>
     </td>
   </tr>
 
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/settings.png" alt="Reva Player settings window showcasing Dark Theme" width="100%">
+      <img src="docs/screenshots/settings.jpg" alt="Reva Player settings window showcasing Dark Theme" width="100%">
       <br><sub>Gray Theme (Settings View)</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/Setting-Dayt-theme.png" alt="Reva Player settings window showcasing Day Light Theme" width="100%">
+      <img src="docs/screenshots/Setting-Dayt-theme.jpg" alt="Reva Player settings window showcasing Day Light Theme" width="100%">
       <br><sub>Day Theme / Light Mode</sub>
     </td>
   </tr>
