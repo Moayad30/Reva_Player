@@ -237,7 +237,6 @@ distribution.
 
 ## 📝 Release Notes
 
-- 📝 [GitHub release text for v1.0.0](RELEASE_NOTES_v1.0.0.md)
 - 🧱 [Release build notes](docs/packaging/RELEASE_BUILDS.md)
 - 📦 [Packaging overview](docs/packaging/README.md)
 
@@ -245,7 +244,6 @@ distribution.
 
 - 📖 [User Guide](docs/USER_GUIDE.md)
 - 📦 [Packaging](docs/packaging/README.md)
-- ✅ [QA Checklist](docs/QA_CHECKLIST.md)
 - 🧱 [Architecture](docs/ARCHITECTURE.md)
 - 📄 [Third-party notices](THIRD_PARTY_NOTICES.md)
 
