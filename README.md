@@ -18,9 +18,9 @@ version 3 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
 
 Repository: [github.com/Moayad30/Reva_Player](https://github.com/Moayad30/Reva_Player)
 
-⭐ If Reva Player is useful to you, please consider giving the repository a star
+⭐⭐ If Reva Player is useful to you, please consider giving the repository a star
 on GitHub. Stars help more Linux users discover the project and show that there
-is real interest in continued development.
+is real interest in continued development. ⭐⭐
 
 ## 🖼️ Preview
 
